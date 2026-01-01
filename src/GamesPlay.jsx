@@ -6,8 +6,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 
 const genAI = new GoogleGenerativeAI("AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
-
+const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
+  
 export default function GamesPlay() {
   const { roomId } = useParams();
   const [room, setRoom] = useState(null);
@@ -20,6 +20,9 @@ export default function GamesPlay() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showRandomAction, setShowRandomAction] = useState(false);
   const [randomActionData, setRandomActionData] = useState(null);
+  const [isGameOver, setIsGameOver] = useState(false);
+ const totalQuestionsAvailable = allCategories.length * 6; 
+
 
   // --- إصلاح مسارات الصوت (حذف كلمة public) ---
   const sndTick = useRef(new Audio("/sounds/button-19.mp3"));
@@ -33,6 +36,15 @@ export default function GamesPlay() {
       soundRef.current.play().catch((err) => console.log("Audio play blocked or error:", err));
     }
   };
+// شرط الانتقال التلقائي لشاشة النهاية
+  useEffect(() => {
+  if (usedQuestions.length > 0 && usedQuestions.length === totalQuestionsAvailable) {
+    // ننتظر ثانية واحدة بعد آخر إجابة ثم نظهر شاشة النهاية
+    setTimeout(() => {
+      setIsGameOver(true);
+    }, 1500);
+  }
+}, [usedQuestions, totalQuestionsAvailable]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
@@ -167,24 +179,58 @@ export default function GamesPlay() {
       </div>
 
       <div style={styles.grid}>
-        {allCategories.map((cat, i) => (
-          <div key={i} style={styles.row}>
-            <div style={styles.btnSide}>
-              {[200, 400, 600].map(p => (
-                <button key={p} disabled={usedQuestions.includes(`${cat}-${p}-team1`)}
-                  onClick={() => openQuestion(cat, p, 'team1')} style={{...styles.pBtn, background: '#3498db'}}>{p}</button>
-              ))}
-            </div>
-            <div style={styles.catName}>{cat}</div>
-            <div style={styles.btnSide}>
-              {[200, 400, 600].map(p => (
-                <button key={p} disabled={usedQuestions.includes(`${cat}-${p}-team2`)}
-                  onClick={() => openQuestion(cat, p, 'team2')} style={{...styles.pBtn, background: '#e74c3c'}}>{p}</button>
-              ))}
-            </div>
-          </div>
-        ))}
+  {allCategories.map((cat, i) => (
+    <div key={i} style={styles.row}>
+      
+      {/* أزرار الفريق الأول (أزرق -> رمادي عند الحل) */}
+      <div style={styles.btnSide}>
+        {[200, 400, 600].map(p => {
+          const isSolved = usedQuestions.includes(`${cat}-${p}-team1`);
+          return (
+            <button 
+              key={p} 
+              disabled={isSolved}
+              onClick={() => openQuestion(cat, p, 'team1')} 
+              style={{
+                ...styles.pBtn, 
+                background: isSolved ? '#7f8c8d' : '#3498db', // تغيير اللون هنا
+                opacity: isSolved ? 0.6 : 1,                 // جعل الزر باهتاً قليلاً
+                cursor: isSolved ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {p}
+            </button>
+          );
+        })}
       </div>
+
+      <div style={styles.catName}>{cat}</div>
+
+      {/* أزرار الفريق الثاني (أحمر -> رمادي عند الحل) */}
+      <div style={styles.btnSide}>
+        {[200, 400, 600].map(p => {
+          const isSolved = usedQuestions.includes(`${cat}-${p}-team2`);
+          return (
+            <button 
+              key={p} 
+              disabled={isSolved}
+              onClick={() => openQuestion(cat, p, 'team2')} 
+              style={{
+                ...styles.pBtn, 
+                background: isSolved ? '#7f8c8d' : '#e74c3c', // تغيير اللون هنا
+                opacity: isSolved ? 0.6 : 1,                 // جعل الزر باهتاً قليلاً
+                cursor: isSolved ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {p}
+            </button>
+          );
+        })}
+      </div>
+
+    </div>
+  ))}
+</div>
 
       {currentQuestion && (
         <div style={styles.overlay}>
@@ -248,8 +294,10 @@ function TeamPanel({ team, teamKey, onAct, isTurn, color }) {
           <button key={i} onClick={() => onAct(act, teamKey)} style={styles.miniActBtn}>{act}</button>
         ))}
       </div>
+      {isGameOver && <EndScreen room={room} />}
     </div>
   );
+  
 }
 
 const styles = {

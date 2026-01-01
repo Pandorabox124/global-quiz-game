@@ -6,7 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 import EndScreen from "./EndScreen";
 
-const genAI = new GoogleGenerativeAI("AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q");
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
   
 export default function GamesPlay() {

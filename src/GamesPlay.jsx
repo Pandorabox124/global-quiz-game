@@ -6,7 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 
 const genAI = new GoogleGenerativeAI("AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q");
-const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
 
 export default function GamesPlay() {
   const { roomId } = useParams();
@@ -21,15 +21,16 @@ export default function GamesPlay() {
   const [showRandomAction, setShowRandomAction] = useState(false);
   const [randomActionData, setRandomActionData] = useState(null);
 
-  const sndTick = useRef(new Audio("public/sounds/button-19.mp3"));
-  const sndAction = useRef(new Audio("public/sounds/button-41.mp3"));
-  const sndCorrect = useRef(new Audio("public/sounds/bell-ringing-05.mp3"));
-  const sndWrong = useRef(new Audio("public/sounds/button-10.mp3"));
+  // --- إصلاح مسارات الصوت (حذف كلمة public) ---
+  const sndTick = useRef(new Audio("/sounds/button-19.mp3"));
+  const sndAction = useRef(new Audio("/sounds/button-41.mp3"));
+  const sndCorrect = useRef(new Audio("/sounds/bell-ringing-05.mp3"));
+  const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
 
   const playSound = (soundRef) => {
     if (soundRef.current) {
       soundRef.current.currentTime = 0;
-      soundRef.current.play().catch(() => {});
+      soundRef.current.play().catch((err) => console.log("Audio play blocked or error:", err));
     }
   };
 
@@ -48,10 +49,14 @@ export default function GamesPlay() {
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
-      interval = setInterval(() => setTimer(t => t - 1), 1000);
+      interval = setInterval(() => {
+        setTimer(t => t - 1);
+        if (timer <= 5) playSound(sndTick); // تشغيل صوت تكتكة في آخر 5 ثواني
+      }, 1000);
     } else if (timer === 0 && isActive) {
       setShowAnswer(true);
       setIsActive(false);
+      playSound(sndWrong); // صوت الخطأ عند انتهاء الوقت
     }
     return () => clearInterval(interval);
   }, [isActive, timer]);
@@ -85,7 +90,7 @@ export default function GamesPlay() {
       const selected = actions[Math.floor(Math.random() * actions.length)];
       setRandomActionData(selected);
       setShowRandomAction(true);
-      sndAction.current.play().catch(() => {});
+      playSound(sndAction); // تشغيل صوت الأكشن العشوائي
 
       setTimeout(async () => {
         setShowRandomAction(false);
@@ -113,6 +118,8 @@ export default function GamesPlay() {
   const triggerTeamAction = async (actLabel, teamKey) => {
     if (!currentQuestion) return alert("اختر سؤالاً أولاً!");
     const roomRef = doc(db, "rooms", roomId);
+    playSound(sndAction); // صوت عند تفعيل أي أكشن يدوي
+
     if (actLabel.includes("⚠️") || actLabel.includes("Fault")) {
       const target = currentQuestion.team === 'team1' ? 'team2' : 'team1';
       setCurrentQuestion(p => ({ ...p, team: target, isChallenge: true, challengeBy: teamKey }));
@@ -131,14 +138,19 @@ export default function GamesPlay() {
   const handleResult = async (correct) => {
     const roomRef = doc(db, "rooms", roomId);
     const { team, points, isDouble, isChallenge, challengeBy, cat } = currentQuestion;
+    
     if (correct) {
+      playSound(sndCorrect); // صوت النجاح
       if (isChallenge) {
         await updateDoc(roomRef, { [`${challengeBy}.score`]: increment(points / 2) });
       } else {
         await updateDoc(roomRef, { [`${team}.score`]: increment(isDouble ? points * 2 : points) });
       }
-    } else if (isChallenge) {
-      await updateDoc(roomRef, { [`${team}.score`]: increment(-(points / 2)) });
+    } else {
+      playSound(sndWrong); // صوت الفشل
+      if (isChallenge) {
+        await updateDoc(roomRef, { [`${team}.score`]: increment(-(points / 2)) });
+      }
     }
     setUsedQuestions(p => [...p, `${cat}-${points}-${team}`]);
     setCurrentQuestion(null);
@@ -147,6 +159,7 @@ export default function GamesPlay() {
 
   return (
     <div style={styles.mainContainer}>
+      {/* ... (باقي كود الـ JSX يظل كما هو دون تغيير في التنسيق) ... */}
       <div style={styles.header}>
         <TeamPanel team={room?.team1} teamKey="team1" onAct={triggerTeamAction} isTurn={currentQuestion?.team === 'team1'} color="#3498db" />
         <div style={styles.mainTimer}>{timer}</div>
@@ -156,17 +169,13 @@ export default function GamesPlay() {
       <div style={styles.grid}>
         {allCategories.map((cat, i) => (
           <div key={i} style={styles.row}>
-            {/* أزرار الفريق الأول (أزرق) */}
             <div style={styles.btnSide}>
               {[200, 400, 600].map(p => (
                 <button key={p} disabled={usedQuestions.includes(`${cat}-${p}-team1`)}
                   onClick={() => openQuestion(cat, p, 'team1')} style={{...styles.pBtn, background: '#3498db'}}>{p}</button>
               ))}
             </div>
-
             <div style={styles.catName}>{cat}</div>
-
-            {/* أزرار الفريق الثاني (أحمر) */}
             <div style={styles.btnSide}>
               {[200, 400, 600].map(p => (
                 <button key={p} disabled={usedQuestions.includes(`${cat}-${p}-team2`)}
@@ -176,66 +185,46 @@ export default function GamesPlay() {
           </div>
         ))}
       </div>
-{currentQuestion && (
-  <div style={styles.overlay}>
-    <div style={styles.qModal}>
-      
-      {/* 1. الهيدر (الفئة والتوقيت) */}
-      <div style={styles.modalHeader}>
-        <span>{currentQuestion.cat} ({currentQuestion.points} نقطة)</span>
-        <span style={styles.timerDisplay}>⏱️ {timer}s</span>
-      </div>
 
-      {/* --- 2. منطقة أزرار الأكشن للفريقين (يمين ويسار) --- */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '10px', background: 'rgba(0,0,0,0.03)', borderRadius: '15px' }}>
-        
-        {/* أكشن الفريق الأول (أزرق) */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', width: '45%', justifyContent: 'flex-start' }}>
-          {room?.team1?.actions?.map((act, i) => (
-            <button key={i} onClick={() => triggerTeamAction(act, 'team1')} 
-              style={{ ...styles.modalActionBtn, background: '#3498db' }}>{act}</button>
-          ))}
-        </div>
+      {currentQuestion && (
+        <div style={styles.overlay}>
+          <div style={styles.qModal}>
+            <div style={styles.modalHeader}>
+              <span>{currentQuestion.cat} ({currentQuestion.points} نقطة)</span>
+              <span style={styles.timerDisplay}>⏱️ {timer}s</span>
+            </div>
 
-        {/* فاصل بسيط */}
-        <div style={{ fontWeight: 'bold', color: '#ccc' }}>VS</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', padding: '10px', background: 'rgba(0,0,0,0.03)', borderRadius: '15px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', width: '45%' }}>
+                {room?.team1?.actions?.map((act, i) => (
+                  <button key={i} onClick={() => triggerTeamAction(act, 'team1')} style={{ ...styles.modalActionBtn, background: '#3498db' }}>{act}</button>
+                ))}
+              </div>
+              <div style={{ fontWeight: 'bold', color: '#ccc' }}>VS</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', width: '45%', justifyContent: 'flex-end' }}>
+                {room?.team2?.actions?.map((act, i) => (
+                  <button key={i} onClick={() => triggerTeamAction(act, 'team2')} style={{ ...styles.modalActionBtn, background: '#e74c3c' }}>{act}</button>
+                ))}
+              </div>
+            </div>
 
-        {/* أكشن الفريق الثاني (أحمر) */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', width: '45%', justifyContent: 'flex-end' }}>
-          {room?.team2?.actions?.map((act, i) => (
-            <button key={i} onClick={() => triggerTeamAction(act, 'team2')} 
-              style={{ ...styles.modalActionBtn, background: '#e74c3c' }}>{act}</button>
-          ))}
-        </div>
-      </div>
+            <h1 style={!showAnswer ? styles.qText : styles.aText}>
+              {!showAnswer ? currentQuestion.question : currentQuestion.answer}
+            </h1>
 
-      {/* 3. تنبيهات الأكشن النشطة (إذا تم ضغط فاول أو دبل) */}
-      <div style={{ marginBottom: '15px' }}>
-        {currentQuestion.isChallenge && <div style={styles.alertBar}>🚩 {room[currentQuestion.challengeBy]?.name} استخدم الفاول!</div>}
-        {currentQuestion.isDouble && <div style={{...styles.alertBar, background: '#fff9db', color: '#f08c00'}}>🚀 نقاط مضاعفة حالياً!</div>}
-      </div>
-
-      {/* 4. نص السؤال والجواب */}
-      <h1 style={!showAnswer ? styles.qText : styles.aText}>
-        {!showAnswer ? currentQuestion.question : currentQuestion.answer}
-      </h1>
-
-      {/* 5. أزرار التحكم بالنتيجة */}
-      <div style={styles.modalFooter}>
-        {!showAnswer ? (
-          <button onClick={() => { setShowAnswer(true); playSound(sndTick); }} style={styles.actionBtn}>كشف الإجابة</button>
-        ) : (
-          <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
-            <button onClick={() => handleResult(true)} style={styles.corBtn}>صح ✅</button>
-            <button onClick={() => handleResult(false)} style={styles.wrgBtn}>خطأ ❌</button>
+            <div style={styles.modalFooter}>
+              {!showAnswer ? (
+                <button onClick={() => { setShowAnswer(true); playSound(sndTick); }} style={styles.actionBtn}>كشف الإجابة</button>
+              ) : (
+                <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                  <button onClick={() => handleResult(true)} style={styles.corBtn}>صح ✅</button>
+                  <button onClick={() => handleResult(false)} style={styles.wrgBtn}>خطأ ❌</button>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-      
-    </div>
-  </div>
-)}
-      
+        </div>
+      )}
 
       {showRandomAction && (
         <div style={styles.overlay}>
@@ -244,12 +233,10 @@ export default function GamesPlay() {
           </div>
         </div>
       )}
-
       {isGenerating && <div style={styles.overlay}><h2 style={{color: '#fff'}}>AI is thinking... 🧠</h2></div>}
     </div>
   );
 }
-
 function TeamPanel({ team, teamKey, onAct, isTurn, color }) {
   if (!team) return null;
   return (

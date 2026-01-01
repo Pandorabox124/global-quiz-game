@@ -6,7 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 import EndScreen from "./EndScreen";
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_KEY);
+const genAI = new GoogleGenerativeAI("AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q");
 const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
   
 export default function GamesPlay() {
@@ -75,19 +75,26 @@ export default function GamesPlay() {
   }, [isActive, timer]);
 
   const fetchAIQuestion = async (cat, pts) => {
-    setIsGenerating(true);
-    const lang = room?.lang || "ar";
-    const prompt = `Give me a trivia question about "${cat}" with difficulty ${pts}. The output MUST be in ${lang} language. Format as JSON: {"question": "...", "answer": "..."}`;
-    try {
-      const res = await model.generateContent(prompt);
-      const data = JSON.parse(res.response.text().replace(/```json|```/g, "").trim());
-      return data;
-    } catch (e) {
-      return { question: "Error loading question", answer: "Check connection" };
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+  if (!cat || !pts) return { question: "خطأ في الفئة", answer: "غير معروف" }; // حماية من القيم الفارغة
+
+  setIsGenerating(true);
+  const lang = room?.lang || "ar";
+  // تأكد من أن الـ Prompt لا يحتوي على رموز غريبة
+  const prompt = `Give me a trivia question about "${cat}" with difficulty ${pts}. The output MUST be in ${lang} language. Format as JSON: {"question": "...", "answer": "..."}`;
+  
+  try {
+    const res = await model.generateContent(prompt);
+    // تأكد من استلام الاستجابة
+    const responseText = res.response.text();
+    const cleanJson = responseText.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (e) {
+    console.error("AI Error:", e);
+    return { question: "حدث خطأ في جلب السؤال", answer: "يرجى المحاولة مرة أخرى" };
+  } finally {
+    setIsGenerating(false);
+  }
+};
 
   const openQuestion = async (cat, pts, teamKey) => {
     if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد! ❄️");

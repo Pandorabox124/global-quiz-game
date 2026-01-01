@@ -258,7 +258,7 @@ const actionsList = [
 ];
 
 export default function CreateRoom() {
-  const [lang, setLang] = useState("ar");
+  const [lang, setLang] = useState("en");
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [openCat, setOpenCat] = useState(null);

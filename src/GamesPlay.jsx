@@ -4,6 +4,7 @@ import { db } from "./firebase";
 import { doc, onSnapshot, updateDoc, increment, arrayRemove } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
+import EndScreen from "./EndScreen";
 
 const genAI = new GoogleGenerativeAI("AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q");
 const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
@@ -279,6 +280,7 @@ export default function GamesPlay() {
           </div>
         </div>
       )}
+      {isGameOver && <EndScreen room={room} />}
       {isGenerating && <div style={styles.overlay}><h2 style={{color: '#fff'}}>AI is thinking... 🧠</h2></div>}
     </div>
   );
@@ -294,7 +296,6 @@ function TeamPanel({ team, teamKey, onAct, isTurn, color }) {
           <button key={i} onClick={() => onAct(act, teamKey)} style={styles.miniActBtn}>{act}</button>
         ))}
       </div>
-      {isGameOver && <EndScreen room={room} />}
     </div>
   );
   

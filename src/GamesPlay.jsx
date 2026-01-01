@@ -49,16 +49,12 @@ export default function GamesPlay() {
     const lang = room?.lang || 'ar';
     const difficultyMap = {
       ar: points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب",
-      en: points === 200 ? "Easy" : points === 400 ? "Medium" : "Hard",
-      fr: points === 200 ? "Facile" : points === 400 ? "Moyen" : "Difficile",
-      de: points === 200 ? "Einfach" : points === 400 ? "Mittel" : "Schwer"
+      en: points === 200 ? "Easy" : points === 400 ? "Medium" : "Hard"
     };
     const diff = difficultyMap[lang] || difficultyMap['en'];
     const prompts = {
       ar: `أنت خبير مسابقات. أنتج سؤالاً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON: {"question": "نص السؤال", "answer": "الإجابة"}`,
-      en: `You are a quiz expert. Generate a question in "${catName}". Difficulty: ${diff}. JSON: {"question": "text", "answer": "text"}`,
-      fr: `Expert en quiz. Question en "${catName}". Difficulté: ${diff}. JSON: {"question": "texte", "answer": "texte"}`,
-      de: `Quiz-Experte. Frage in "${catName}". Schwierigkeit: ${diff}. JSON: {"question": "Text", "answer": "Text"}`
+      en: `Quiz expert. Category "${catName}". Difficulty: ${diff}. JSON: {"question": "text", "answer": "text"}`
     };
 
     try {
@@ -73,22 +69,11 @@ export default function GamesPlay() {
 
   const openQuestion = async (catName, points, teamKey) => {
     if (room?.[teamKey]?.isFrozen) return alert(room.lang === 'ar' ? "فريقك مجمد!" : "Team is frozen!");
-    
     const roomRef = doc(db, "rooms", roomId);
-    
-    // --- إضافة: تأمين مزامنة اللغة قبل طلب السؤال ---
-    // هذا يضمن أن أي تغيير قمت به في واجهة المطور قد وصل لـ Firebase
-    if (room.lang !== document.documentElement.lang && document.documentElement.lang !== "") {
-       await updateDoc(roomRef, { lang: document.documentElement.lang });
-    }
-    // ------------------------------------------
-
     let finalTeam = teamKey;
-    // ... بقية الكود كما هو
 
     if (room?.stealNextQuestion && room.stealNextQuestion !== teamKey) {
       finalTeam = room.stealNextQuestion;
-      alert(room.lang === 'ar' ? "🎭 تمت سرقة السؤال!" : "🎭 Question Stolen!");
       await updateDoc(roomRef, { stealNextQuestion: null });
     }
 
@@ -97,10 +82,10 @@ export default function GamesPlay() {
 
     if (!extraTurnActive && Math.random() < 0.15) {
       const cards = [
-        { type: "BONUS", ar: "🎁 مضاعفة النقاط!", en: "🎁 Points Doubled!", fr: "🎁 Points Doublés!", de: "🎁 Punkte Verdoppelt!" },
-        { type: "PENALTY", ar: "❌ خصم 200 نقطة!", en: "❌ -200 Points!", fr: "❌ -200 Points!", de: "❌ -200 Punkte!" },
-        { type: "EXTRA", ar: "➕ سؤال إضافي!", en: "➕ Extra Question!", fr: "➕ Question Supplémentaire!", de: "➕ Zusatzfrage!" },
-        { type: "DELETE", ar: "🗑️ حذف السؤال!", en: "🗑️ Question Deleted!", fr: "🗑️ Question Supprimée!", de: "🗑️ Frage Gelöscht!" }
+        { type: "BONUS", ar: "🎁 مضاعفة النقاط!", en: "🎁 Points Doubled!" },
+        { type: "PENALTY", ar: "❌ خصم 200 نقطة!", en: "❌ -200 Points!" },
+        { type: "EXTRA", ar: "➕ سؤال إضافي!", en: "➕ Extra Question!" },
+        { type: "DELETE", ar: "🗑️ حذف السؤال!", en: "🗑️ Question Deleted!" }
       ];
       const card = cards[Math.floor(Math.random() * cards.length)];
       setRandomAction({ ...card, text: card[room.lang] || card['en'] });
@@ -133,7 +118,6 @@ export default function GamesPlay() {
     const pts = currentQuestion.points;
     const currentTeamKey = currentQuestion.team;
 
-    // معالجة النقاط أولاً
     if (room?.isFaultActive) {
       const targetTeam = isCorrect ? room.faultBy : currentTeamKey;
       const amount = isCorrect ? (pts / 2) : -(pts / 2);
@@ -147,10 +131,8 @@ export default function GamesPlay() {
       await updateDoc(roomRef, { [`${currentTeamKey}.score`]: increment(finalPts) });
     }
 
-    // منطق التعديل الأخير: السؤال الإضافي
     if (extraTurnActive) {
       setExtraTurnActive(false);
-      alert(room.lang === 'ar' ? "🎁 سؤال إضافي لنفس الفريق!" : "🎁 Extra question for the same team!");
       const newAiData = await generateAIQuestion(currentQuestion.cat, currentQuestion.points);
       setCurrentQuestion({ ...newAiData, team: currentTeamKey, cat: currentQuestion.cat, points: currentQuestion.points });
       setShowAnswer(false); setTimer(60); setIsActive(true);
@@ -163,25 +145,13 @@ export default function GamesPlay() {
   const useAction = async (teamKey, act) => {
     const roomRef = doc(db, "rooms", roomId);
     const opponent = teamKey === "team1" ? "team2" : "team1";
-    const lang = room.lang;
-
-    if (act.match(/تجميد|Freeze|Gel|Einfrieren/)) {
+    if (act.match(/تجميد|Freeze/)) {
       await updateDoc(roomRef, { [`${opponent}.isFrozen`]: true });
       setTimeout(() => updateDoc(roomRef, { [`${opponent}.isFrozen`]: false }), 30000);
     } 
-    else if (act.match(/فاول|Fault|Faute|Foul/)) {
-      await updateDoc(roomRef, { isFaultActive: true, faultBy: teamKey });
-    } 
-    else if (act.match(/سرقة|Steal|Vol|Klauen/)) {
-      const confirmMsg = { ar: "موافق: نقاط، إلغاء: سؤال", en: "OK: Pts, Cancel: Question" };
-      const choice = window.confirm(confirmMsg[lang] || confirmMsg['en']);
-      if (choice) await updateDoc(roomRef, { [`${teamKey}.score`]: increment(200), [`${opponent}.score`]: increment(-200) });
-      else await updateDoc(roomRef, { stealNextQuestion: teamKey });
+    else if (act.match(/سرقة|Steal/)) {
+      await updateDoc(roomRef, { [`${teamKey}.score`]: increment(200), [`${opponent}.score`]: increment(-200) });
     }
-    else if (act.match(/دبل|Double|Doppel/)) {
-      await updateDoc(roomRef, { [`${teamKey}.nextBonus`]: true });
-    }
-
     const updatedActions = room[teamKey].actions.filter(a => a !== act);
     await updateDoc(roomRef, { [`${teamKey}.actions`]: updatedActions });
   };
@@ -191,101 +161,100 @@ export default function GamesPlay() {
   return (
     <div style={mainContainer}>
       {isGenerating && (
-        <div style={overlay}><div style={modal}><h2>{room.lang === 'ar' ? 'جاري استدعاء السؤال...' : 'AI Generating...'} ⚡</h2></div></div>
+        <div style={overlay}><div style={modal}><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
       )}
 
+      {/* الهيدر المحسن لمنع التداخل */}
       <div style={headerStyle}>
-        <div style={{ color: "#3498db", flex: 1 }}>
-          <h2>{room?.team1?.name}</h2>
+        <div style={teamSide}>
+          <h2 style={teamName1}>{room?.team1?.name}</h2>
           <div style={scoreTxt}>{room?.team1?.score}</div>
           <div style={actRow}>{room?.team1?.actions?.map(a => (<button key={a} onClick={() => useAction('team1', a)} style={actBtn}>{a}</button>))}</div>
         </div>
-        <div style={timerCircle}>{timer}</div>
-        <div style={{ color: "#e74c3c", flex: 1 }}>
-          <h2>{room?.team2?.name}</h2>
+
+        <div style={timerContainer}>
+          <div style={timerCircle}>{timer}</div>
+        </div>
+
+        <div style={teamSide}>
+          <h2 style={teamName2}>{room?.team2?.name}</h2>
           <div style={scoreTxt}>{room?.team2?.score}</div>
           <div style={actRow}>{room?.team2?.actions?.map(a => (<button key={a} onClick={() => useAction('team2', a)} style={actBtn}>{a}</button>))}</div>
         </div>
       </div>
 
+      {/* مساحة الأسئلة */}
       <div style={gridStyle}>
         {allCategories.map((cat, idx) => (
           <div key={idx} style={ladderRow}>
             <div style={questionCluster}>
-              <div style={pointsRight}>{[600, 400, 200].map(p => (<button key={p} onClick={() => openQuestion(cat, p, 'team1')} disabled={usedQuestions.includes(`${cat}-${p}-team1`)} style={{ ...pBtnSmall, background: usedQuestions.includes(`${cat}-${p}-team1`) ? "#444" : "#3498db" }}>{p}</button>))}</div>
-              <div style={centerTextContainer}><div style={catTextLabel}>{cat}</div></div>
-              <div style={pointsLeft}>{[600, 400, 200].map(p => (<button key={p} onClick={() => openQuestion(cat, p, 'team2')} disabled={usedQuestions.includes(`${cat}-${p}-team2`)} style={{ ...pBtnSmall, background: usedQuestions.includes(`${cat}-${p}-team2`) ? "#444" : "#e74c3c" }}>{p}</button>))}</div>
+              <div style={pointsBox}>
+                {[600, 400, 200].map(p => (
+                  <button key={p} onClick={() => openQuestion(cat, p, 'team1')} disabled={usedQuestions.includes(`${cat}-${p}-team1`)} style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team1`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team1`) ? "#666" : "#2c3e50" }}>{p}</button>
+                ))}
+              </div>
+              <div style={catLabel}>{cat}</div>
+              <div style={pointsBox}>
+                {[600, 400, 200].map(p => (
+                  <button key={p} onClick={() => openQuestion(cat, p, 'team2')} disabled={usedQuestions.includes(`${cat}-${p}-team2`)} style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team2`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team2`) ? "#666" : "#2c3e50" }}>{p}</button>
+                ))}
+              </div>
             </div>
           </div>
         ))}
       </div>
 
+      {/* مودال السؤال */}
       {currentQuestion && (
         <div style={overlay}>
           <div style={modal}>
-            <span style={badgeStyle}>{currentQuestion.cat} | {currentQuestion.points} {room?.[currentQuestion.team]?.nextBonus && "🔥 X2"}</span>
-            {!showAnswer ? (<h1 style={qTextResponsive}>{currentQuestion.question}</h1>) : (
+            <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
+            {!showAnswer ? (<h1 style={qText}>{currentQuestion.question}</h1>) : (
               <div style={answerBox}>
-                <h3>{room.lang === 'ar' ? 'الإجابة:' : 'Answer:'}</h3>
-                <h1 style={{ color: "#2ecc71" }}>{currentQuestion.answer}</h1>
-              </div>
-            )}
-            {!showAnswer && (
-              <div style={battleArea}>
-                {['team1', 'team2'].map(t => (
-                  <div key={t} style={teamControl}>
-                    <span style={{color: t === 'team1' ? '#3498db' : '#e74c3c'}}>{room?.[t]?.name}</span>
-                    <div style={actRowSmall}>{room?.[t]?.actions?.map(a => (<button key={a} onClick={() => useAction(t, a)} style={{...modalActBtn, background: t === 'team1' ? '#3498db' : '#e74c3c'}}>{a}</button>))}</div>
-                  </div>
-                ))}
+                <h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1>
               </div>
             )}
             <div style={resRow}>
               {showAnswer ? (
-                <><button onClick={() => handleResult(true)} style={resBtn}>{room.lang === 'ar' ? 'صح ✅' : 'Correct ✅'}</button>
-                  <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#e74c3c" }}>{room.lang === 'ar' ? 'خطأ ❌' : 'Wrong ❌'}</button></>
-              ) : (<button onClick={() => setShowAnswer(true)} style={revealBtn}>{room.lang === 'ar' ? 'كشف الإجابة 👁️' : 'Reveal Answer 👁️'}</button>)}
+                <><button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button>
+                  <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button></>
+              ) : (<button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>)}
             </div>
           </div>
         </div>
       )}
 
       {showActionCard && (
-        <div style={overlay}>
-          <div style={{ ...modal, background: "#f1c40f", color: "#000", border: '8px solid white' }}>
-            <h1 style={{ fontSize: "3rem" }}>{randomAction?.text}</h1>
-          </div>
-        </div>
+        <div style={overlay}><div style={actionModal}><h1>{randomAction?.text}</h1></div></div>
       )}
     </div>
   );
 }
 
-// التنسيقات (مختصرة للأداء)
-const badgeStyle = { background: '#f39c12', color: 'white', padding: '6px 16px', borderRadius: '20px', fontWeight: 'bold' };
-const qTextResponsive = { fontSize: "1.7rem", margin: "25px 0", wordWrap: "break-word" };
-const answerBox = { padding: '25px', background: '#fdfdfd', borderRadius: '20px', border: '3px solid #2ecc71' };
-const battleArea = { display: "flex", background: "#f1f2f6", padding: "12px", borderRadius: "15px", marginTop: "15px" };
-const teamControl = { flex: 1, display: "flex", flexDirection: "column", alignItems: "center" };
-const actRowSmall = { display: "flex", flexWrap: "wrap", gap: "4px", justifyContent: "center" };
-const modalActBtn = { padding: "5px 10px", borderRadius: "6px", color: "white", border: "none", fontSize: "10px", cursor: "pointer" };
-const mainContainer = { direction: "rtl", background: "#2c3e50", minHeight: "100vh", padding: "20px" };
-const headerStyle = { display: "flex", justifyContent: "space-around", alignItems: "center", background: "rgba(255, 255, 255, 0.1)", padding: "15px", borderRadius: "20px" };
-const scoreTxt = { fontSize: "42px", fontWeight: "900", color: 'white' };
-const timerCircle = { width: "70px", height: "70px", borderRadius: "50%", border: "5px solid #f1c40f", display: "flex", justifyContent: "center", alignItems: "center", fontSize: "28px", background: "white" };
-const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: "20px" };
-const ladderRow = { background: "rgba(255,255,255,0.05)", padding: "15px", borderRadius: "25px" };
-const questionCluster = { display: "flex", alignItems: "center", justifyContent: "center" };
-const pointsRight = { display: "flex", flexDirection: "column", gap: "8px" };
-const pointsLeft = { display: "flex", flexDirection: "column", gap: "8px" };
-const pBtnSmall = { border: "1px solid white", color: "white", width: "65px", height: "45px", borderRadius: "12px", cursor: "pointer" };
-const overlay = { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.9)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 };
-const modal = { background: "white", padding: "40px", borderRadius: "30px", textAlign: "center", width: "85%", maxWidth: "650px" };
-const resRow = { display: "flex", justifyContent: "center", gap: "20px", marginTop: '25px' };
-const resBtn = { padding: "15px 35px", background: "#2ecc71", color: "white", border: "none", borderRadius: "15px", cursor: "pointer" };
-const revealBtn = { padding: "18px 50px", background: "#34495e", color: "white", border: "none", borderRadius: "50px", cursor: "pointer" };
-const actRow = { display: "flex", gap: "8px", justifyContent: "center", marginTop: "10px" };
-const actBtn = { padding: "6px 12px", borderRadius: "8px", border: "none", background: "rgba(255,255,255,0.2)", color: "white", fontSize: "12px" };
-const loadingStyle = { color: "white", textAlign: "center", marginTop: "100px", fontSize: "28px" };
-const centerTextContainer = { width: "160px", textAlign: 'center' };
-const catTextLabel = { color: "#f1c40f", fontSize: "18px", fontWeight: "bold" };
+// التنسيقات (Colors: Off-White & Gray)
+const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "40px 20px" };
+const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "30px", borderRadius: "30px", marginBottom: "60px", border: "1px solid #333" };
+const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" };
+const teamName1 = { margin: 0, color: "#3498db", fontSize: "24px" };
+const teamName2 = { margin: 0, color: "#e74c3c", fontSize: "24px" };
+const scoreTxt = { fontSize: "48px", fontWeight: "900", color: "#fff" };
+const timerContainer = { flex: "0 0 150px", display: "flex", justifyContent: "center" };
+const timerCircle = { width: "90px", height: "90px", borderRadius: "50%", border: "6px solid #f1c40f", display: "flex", justifyContent: "center", alignItems: "center", fontSize: "35px", fontWeight: "bold", background: "#fff", color: "#000" };
+const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "25px", maxWidth: "1400px", margin: "0 auto" };
+const ladderRow = { background: "#262626", padding: "20px", borderRadius: "25px", border: "1px solid #333" };
+const questionCluster = { display: "flex", alignItems: "center", justifyContent: "space-between" };
+const pointsBox = { display: "flex", flexDirection: "column", gap: "10px" };
+const pBtn = { width: "80px", height: "55px", borderRadius: "15px", border: "none", cursor: "pointer", fontSize: "20px", fontWeight: "bold", transition: "0.3s" };
+const catLabel = { color: "#f1c40f", fontSize: "20px", fontWeight: "bold", textAlign: "center", flex: 1, padding: "0 10px" };
+const overlay = { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.95)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 2000 };
+const modal = { background: "#fff", padding: "50px", borderRadius: "40px", textAlign: "center", width: "90%", maxWidth: "700px" };
+const modalBadge = { background: "#f1c40f", padding: "8px 20px", borderRadius: "20px", display: "inline-block", marginBottom: "20px", fontWeight: "bold" };
+const qText = { fontSize: "2rem", color: "#2c3e50", margin: "30px 0" };
+const answerBox = { padding: "30px", background: "#f9f9f9", borderRadius: "20px", border: "2px solid #27ae60", margin: "20px 0" };
+const resRow = { display: "flex", justifyContent: "center", gap: "20px" };
+const resBtn = { padding: "15px 40px", background: "#27ae60", color: "#fff", border: "none", borderRadius: "15px", cursor: "pointer", fontSize: "18px", fontWeight: "bold" };
+const revealBtn = { padding: "20px 60px", background: "#2c3e50", color: "#fff", border: "none", borderRadius: "50px", cursor: "pointer", fontSize: "20px" };
+const actRow = { display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" };
+const actBtn = { padding: "5px 12px", borderRadius: "8px", border: "1px solid #555", background: "#333", color: "#ccc", fontSize: "12px", cursor: "pointer" };
+const actionModal = { background: "#f1c40f", padding: "60px", borderRadius: "40px", border: "10px solid #fff", textAlign: "center" };
+const loadingStyle = { color: "#fff", textAlign: "center", marginTop: "100px", fontSize: "24px" };

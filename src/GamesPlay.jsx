@@ -6,7 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // --- إضافة ربط ملف الأنيميشن هنا ---
 import './GamesPlay.css'; 
 
-const genAI = new GoogleGenerativeAI("AIzaSyDipJccwc20r4YLdAGRN5Ji6xBCSxvCLOs");
+const genAI = new GoogleGenerativeAI("AIzaSyDHTNSBI9MM9qPvVUDIPLwSqq36vA1YNNg");
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); 
 
 export default function GamesPlay() {

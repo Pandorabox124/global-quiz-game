@@ -306,7 +306,7 @@ const styles = {
     background: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)", 
     minHeight: "100vh", 
     padding: "20px", 
-    color: "#fff", 
+    color: "#222030ff", 
     direction: 'rtl', 
     fontFamily: 'sans-serif',
     backgroundSize: "400% 400%",

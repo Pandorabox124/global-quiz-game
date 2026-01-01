@@ -18,8 +18,6 @@ export default function GamesPlay() {
   const [showAnswer, setShowAnswer] = useState(false);
   const [usedQuestions, setUsedQuestions] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  
-  // حالة الأكشن كارد العشوائي
   const [showRandomAction, setShowRandomAction] = useState(false);
   const [randomActionData, setRandomActionData] = useState(null);
 
@@ -49,14 +47,10 @@ export default function GamesPlay() {
     return () => clearInterval(interval);
   }, [isActive, timer]);
 
-  // دالة جلب السؤال باللغة المختارة
   const fetchAIQuestion = async (cat, pts) => {
     setIsGenerating(true);
     const lang = room?.lang || "ar";
-    const prompt = `Give me a trivia question about "${cat}" with difficulty ${pts}. 
-    The output MUST be in ${lang} language. 
-    Format as JSON: {"question": "...", "answer": "..."}`;
-    
+    const prompt = `Give me a trivia question about "${cat}" with difficulty ${pts}. The output MUST be in ${lang} language. Format as JSON: {"question": "...", "answer": "..."}`;
     try {
       const res = await model.generateContent(prompt);
       const data = JSON.parse(res.response.text().replace(/```json|```/g, "").trim());
@@ -68,13 +62,10 @@ export default function GamesPlay() {
     }
   };
 
-  // دالة فتح السؤال مع نظام العشوائية
   const openQuestion = async (cat, pts, teamKey) => {
     if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد! ❄️");
-    
     const aiData = await fetchAIQuestion(cat, pts);
     
-    // نظام الأكشن كارد العشوائي (20% احتمال)
     if (Math.random() < 0.20) {
       const actions = [
         { type: 'BONUS', txt: "🎁 هدية: نقاط مضاعفة!", color: "#f1c40f" },
@@ -90,7 +81,7 @@ export default function GamesPlay() {
       setTimeout(async () => {
         setShowRandomAction(false);
         if (selected.type === 'DELETE') {
-          setUsedQuestions(prev => [...prev, `${cat}-${pts}`]);
+          setUsedQuestions(prev => [...prev, `${cat}-${pts}-${teamKey}`]);
         } else {
           if (selected.type === 'PENALTY') {
             await updateDoc(doc(db, "rooms", roomId), { [`${teamKey}.score`]: increment(-200) });
@@ -110,11 +101,9 @@ export default function GamesPlay() {
     setShowAnswer(false);
   };
 
-  // تفعيل أزرار الأكشن الخاصة بالفريق
   const triggerTeamAction = async (actLabel, teamKey) => {
     if (!currentQuestion) return alert("اختر سؤالاً أولاً!");
     const roomRef = doc(db, "rooms", roomId);
-    
     if (actLabel.includes("⚠️") || actLabel.includes("Fault")) {
       const target = currentQuestion.team === 'team1' ? 'team2' : 'team1';
       setCurrentQuestion(p => ({ ...p, team: target, isChallenge: true, challengeBy: teamKey }));
@@ -127,14 +116,12 @@ export default function GamesPlay() {
       await updateDoc(roomRef, { [`${target}.isFrozen`]: true });
       setTimeout(() => updateDoc(roomRef, { [`${target}.isFrozen`]: false }), 30000);
     }
-
     await updateDoc(roomRef, { [`${teamKey}.actions`]: arrayRemove(actLabel) });
   };
 
   const handleResult = async (correct) => {
     const roomRef = doc(db, "rooms", roomId);
     const { team, points, isDouble, isChallenge, challengeBy, cat } = currentQuestion;
-
     if (correct) {
       if (isChallenge) {
         await updateDoc(roomRef, { [`${challengeBy}.score`]: increment(points / 2) });
@@ -144,35 +131,43 @@ export default function GamesPlay() {
     } else if (isChallenge) {
       await updateDoc(roomRef, { [`${team}.score`]: increment(-(points / 2)) });
     }
-
-    setUsedQuestions(p => [...p, `${cat}-${points}`]);
+    setUsedQuestions(p => [...p, `${cat}-${points}-${team}`]);
     setCurrentQuestion(null);
     setIsActive(false);
   };
 
   return (
     <div style={styles.mainContainer}>
-      {/* الهيدر: أسماء الفرق وأزرار الأكشن المختارة */}
       <div style={styles.header}>
-        <TeamPanel team={room?.team1} teamKey="team1" onAct={triggerTeamAction} isTurn={currentQuestion?.team === 'team1'} />
+        <TeamPanel team={room?.team1} teamKey="team1" onAct={triggerTeamAction} isTurn={currentQuestion?.team === 'team1'} color="#3498db" />
         <div style={styles.mainTimer}>{timer}</div>
-        <TeamPanel team={room?.team2} teamKey="team2" onAct={triggerTeamAction} isTurn={currentQuestion?.team === 'team2'} />
+        <TeamPanel team={room?.team2} teamKey="team2" onAct={triggerTeamAction} isTurn={currentQuestion?.team === 'team2'} color="#e74c3c" />
       </div>
 
-      {/* شبكة الأسئلة */}
       <div style={styles.grid}>
         {allCategories.map((cat, i) => (
           <div key={i} style={styles.row}>
+            {/* أزرار الفريق الأول (أزرق) */}
+            <div style={styles.btnSide}>
+              {[200, 400, 600].map(p => (
+                <button key={p} disabled={usedQuestions.includes(`${cat}-${p}-team1`)}
+                  onClick={() => openQuestion(cat, p, 'team1')} style={{...styles.pBtn, background: '#3498db'}}>{p}</button>
+              ))}
+            </div>
+
             <div style={styles.catName}>{cat}</div>
-            {[200, 400, 600].map(p => (
-              <button key={p} disabled={usedQuestions.includes(`${cat}-${p}`)}
-                onClick={() => openQuestion(cat, p, 'team1')} style={styles.pBtn}>{p}</button>
-            ))}
+
+            {/* أزرار الفريق الثاني (أحمر) */}
+            <div style={styles.btnSide}>
+              {[200, 400, 600].map(p => (
+                <button key={p} disabled={usedQuestions.includes(`${cat}-${p}-team2`)}
+                  onClick={() => openQuestion(cat, p, 'team2')} style={{...styles.pBtn, background: '#e74c3c'}}>{p}</button>
+              ))}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* نافذة السؤال (Modal) */}
       {currentQuestion && (
         <div style={styles.overlay}>
           <div style={styles.qModal}>
@@ -181,11 +176,7 @@ export default function GamesPlay() {
               <span style={styles.timerDisplay}>⏱️ {timer}s</span>
             </div>
             {currentQuestion.isChallenge && <div style={styles.alertBar}>⚠️ تحدي إجباري للفريق الآخر!</div>}
-            
-            <h1 style={!showAnswer ? styles.qText : styles.aText}>
-              {!showAnswer ? currentQuestion.question : currentQuestion.answer}
-            </h1>
-
+            <h1 style={!showAnswer ? styles.qText : styles.aText}>{!showAnswer ? currentQuestion.question : currentQuestion.answer}</h1>
             <div style={styles.modalFooter}>
               {!showAnswer ? (
                 <button onClick={() => setShowAnswer(true)} style={styles.actionBtn}>كشف الإجابة</button>
@@ -200,7 +191,6 @@ export default function GamesPlay() {
         </div>
       )}
 
-      {/* كرت الأكشن العشوائي */}
       {showRandomAction && (
         <div style={styles.overlay}>
           <div style={{...styles.randomCard, backgroundColor: randomActionData.color}}>
@@ -214,11 +204,11 @@ export default function GamesPlay() {
   );
 }
 
-function TeamPanel({ team, teamKey, onAct, isTurn }) {
+function TeamPanel({ team, teamKey, onAct, isTurn, color }) {
   if (!team) return null;
   return (
-    <div style={{...styles.teamBox, border: isTurn ? '2px solid #f1c40f' : '1px solid #444'}}>
-      <h3>{team.name} {team.isFrozen && "❄️"}</h3>
+    <div style={{...styles.teamBox, border: isTurn ? `3px solid ${color}` : '1px solid #444'}}>
+      <h3 style={{color: color}}>{team.name} {team.isFrozen && "❄️"}</h3>
       <div style={styles.score}>{team.score}</div>
       <div style={styles.actionsRow}>
         {team.actions?.map((act, i) => (
@@ -230,17 +220,18 @@ function TeamPanel({ team, teamKey, onAct, isTurn }) {
 }
 
 const styles = {
-  mainContainer: { background: "#0a0a23", minHeight: "100vh", padding: "20px", color: "#fff", direction: 'rtl' },
+  mainContainer: { background: "#0a0a23", minHeight: "100vh", padding: "20px", color: "#fff", direction: 'rtl', fontFamily: 'sans-serif' },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px" },
   teamBox: { background: "rgba(255,255,255,0.05)", padding: "15px", borderRadius: "15px", flex: 1, textAlign: "center" },
   score: { fontSize: "2.2rem", fontWeight: "bold", color: "#f1c40f" },
   actionsRow: { display: "flex", justifyContent: "center", gap: "5px", marginTop: "10px" },
   miniActBtn: { padding: "5px 8px", fontSize: "0.7rem", borderRadius: "8px", border: "none", cursor: "pointer", background: "#34495e", color: "#fff" },
   mainTimer: { width: "70px", height: "70px", background: "#fff", color: "#000", borderRadius: "50%", display: "flex", justifyContent: "center", alignItems: "center", fontSize: "1.8rem", fontWeight: "bold", margin: "0 20px" },
-  grid: { maxWidth: "800px", margin: "0 auto" },
-  row: { display: "flex", background: "rgba(255,255,255,0.08)", padding: "15px", borderRadius: "12px", marginBottom: "10px", alignItems: "center" },
-  catName: { flex: 1, fontWeight: "bold" },
-  pBtn: { width: "60px", height: "45px", margin: "0 5px", borderRadius: "8px", border: "none", fontWeight: "bold", cursor: "pointer" },
+  grid: { maxWidth: "900px", margin: "0 auto" },
+  row: { display: "flex", background: "rgba(255,255,255,0.08)", padding: "10px", borderRadius: "12px", marginBottom: "10px", alignItems: "center", justifyContent: "space-between" },
+  btnSide: { display: "flex", gap: "8px" },
+  catName: { flex: 1, fontWeight: "bold", textAlign: "center", fontSize: "1.1rem", color: "#f1c40f" },
+  pBtn: { width: "55px", height: "45px", borderRadius: "8px", border: "none", fontWeight: "bold", cursor: "pointer", color: "#fff" },
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 },
   qModal: { background: "#fff", color: "#333", width: "90%", maxWidth: "600px", padding: "30px", borderRadius: "25px", textAlign: "center" },
   modalHeader: { display: "flex", justifyContent: "space-between", marginBottom: "20px", color: "#888" },
@@ -250,6 +241,6 @@ const styles = {
   actionBtn: { width: "100%", padding: "15px", background: "#333", color: "#fff", border: "none", borderRadius: "12px", cursor: "pointer" },
   corBtn: { flex: 1, padding: "15px", background: "#27ae60", color: "#fff", border: "none", borderRadius: "12px" },
   wrgBtn: { flex: 1, padding: "15px", background: "#e74c3c", color: "#fff", border: "none", borderRadius: "12px" },
-  randomCard: { padding: "50px", borderRadius: "20px", color: "#fff", textAlign: "center" },
+  randomCard: { padding: "50px", borderRadius: "20px", color: "#fff", textAlign: "center", minWidth: "300px" },
   alertBar: { background: "#ffeaea", color: "#e74c3c", padding: "10px", borderRadius: "10px", marginBottom: "15px", fontWeight: "bold" }
 };

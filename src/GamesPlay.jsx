@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { db } from "./firebase";
-import { doc, onSnapshot, updateDoc, increment, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 
+// إعداد المحرك مباشرة من ملف الـ env لضمان السرعة والاستقرار
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(API_KEY);
+// تم تصحيح الموديل إلى 1.5-flash لتجنب خطأ 404
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
+
 export default function GamesPlay() {
   const { roomId } = useParams();
-  
-  // --- الحالات (States) ---
   const [room, setRoom] = useState(null);
-  const [appConfig, setAppConfig] = useState({ apiKey: "", gameName: "جاري التحميل..." });
-  const [model, setModel] = useState(null); 
   const [timer, setTimer] = useState(60);
   const [isActive, setIsActive] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -23,48 +25,13 @@ export default function GamesPlay() {
   const [extraTurnActive, setExtraTurnActive] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // --- مراجع الصوت ---
+  // مراجع ملفات الصوت
   const sndTick = useRef(new Audio("/sounds/button-41.mp3"));
   const sndOpen = useRef(new Audio("/sounds/button-3.mp3"));
   const sndCorrect = useRef(new Audio("/sounds/bell-ringing-05.mp3"));
   const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
   const sndAction = useRef(new Audio("/sounds/button-19.mp3"));
 
-  // 1. جلب الإعدادات وتجهيز الموديل (حل مشكلة 404)
-  useEffect(() => {
-    const fetchConfigAndInitAI = async () => {
-      try {
-        const configRef = doc(db, "app_settings", "config");
-        const configSnap = await getDoc(configRef);
-        
-        let finalKey = "";
-        let finalName = "لعبة المسابقات";
-
-        if (configSnap.exists()) {
-          finalKey = configSnap.data().apiKey;
-          finalName = configSnap.data().gameName || finalName;
-        } else {
-          // إذا لم يجد إعدادات في Firebase يسحب من ملف البيئة
-          finalKey = import.meta.env.VITE_GEMINI_API_KEY;
-        }
-
-        if (finalKey) {
-          setAppConfig({ apiKey: finalKey, gameName: finalName });
-          const genAI = new GoogleGenerativeAI(finalKey);
-          // تأكد من استخدام v1beta أو الموديل المستقر الصحيح
-          const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-          setModel(aiModel);
-        } else {
-          console.error("No API Key found in Firestore or .env");
-        }
-      } catch (e) {
-        console.error("Config Error:", e);
-      }
-    };
-    fetchConfigAndInitAI();
-  }, []);
-
-  // 2. متابعة الغرفة
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
       if (docSnap.exists()) {
@@ -77,7 +44,6 @@ export default function GamesPlay() {
     return () => unsub();
   }, [roomId]);
 
-  // 3. التايمر
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
@@ -93,38 +59,30 @@ export default function GamesPlay() {
     return () => clearInterval(interval);
   }, [isActive, timer]);
 
-  // --- الدوال ---
-
   const generateAIQuestion = async (catName, points) => {
-    // حماية: إذا لم يكن الموديل جاهزاً لا ترسل الطلب (تجنب 404)
-    if (!model) {
-      alert("النظام غير جاهز بعد، انتظر ثواني...");
-      return null;
-    }
-
     setIsGenerating(true);
-    const lang = room?.lang || 'ar';
     const diff = points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب";
     
-    const prompt = `أنت خبير مسابقات. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON: {"question": "نص السؤال", "answer": "الإجابة"}`;
+    // برومبت محسن لضمان استجابة سريعة ودقيقة
+    const prompt = `أنت خبير مسابقات. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON فقط: {"question": "نص السؤال", "answer": "الإجابة"}`;
 
     try {
       const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = result.response.text();
       const cleanJson = text.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
     } catch (error) {
-      console.error("AI Fetch Error:", error);
-      return { question: "حدث خطأ في جلب السؤال، حاول مرة أخرى", answer: "خطأ اتصال" };
-    } finally { setIsGenerating(false); }
+      console.error("AI Error:", error);
+      return { question: "حدث خطأ في جلب السؤال، جرب مرة أخرى", answer: "خطأ في الاتصال" };
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const openQuestion = async (catName, points, teamKey) => {
-    if (!model) return alert("جاري الاتصال بالخادم...");
-    if (room?.[teamKey]?.isFrozen) return alert("فريقك مجمد!");
-    
+    if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد حالياً!");
     sndOpen.current.play().catch(() => {});
+
     const roomRef = doc(db, "rooms", roomId);
     let finalTeam = teamKey;
 
@@ -136,7 +94,6 @@ export default function GamesPlay() {
     const qId = `${catName}-${points}-${teamKey}`;
     if (usedQuestions.includes(qId)) return;
 
-    // منطق بطاقة الأكشن
     if (!extraTurnActive && Math.random() < 0.15) {
       const cards = [
         { type: "BONUS", ar: "🎁 مضاعفة النقاط!", en: "🎁 Points Doubled!" },
@@ -167,16 +124,13 @@ export default function GamesPlay() {
 
   const fetchQuestionLogic = async (catName, points, teamKey) => {
     const aiData = await generateAIQuestion(catName, points);
-    if (aiData) {
-      setCurrentQuestion({ ...aiData, team: teamKey, cat: catName, points: points });
-      setIsActive(true); setTimer(60); setShowAnswer(false);
-    }
+    setCurrentQuestion({ ...aiData, team: teamKey, cat: catName, points: points });
+    setIsActive(true); setTimer(60); setShowAnswer(false);
   };
 
   const handleResult = async (isCorrect) => {
     const roomRef = doc(db, "rooms", roomId);
     isCorrect ? sndCorrect.current.play().catch(() => {}) : sndWrong.current.play().catch(() => {});
-
     if (isCorrect) {
       await updateDoc(roomRef, { [`${currentQuestion.team}.score`]: increment(currentQuestion.points) });
     }
@@ -184,26 +138,22 @@ export default function GamesPlay() {
     setCurrentQuestion(null); setIsActive(false);
   };
 
-  if (!room) return <div style={loadingStyle}>Loading...</div>;
+  if (!room) return <div style={{color: '#fff', textAlign: 'center', marginTop: '100px'}}>Loading...</div>;
 
   return (
     <div style={mainContainer}>
-      <div style={{textAlign: 'center', color: '#f1c40f', marginBottom: '20px'}}>
-         <h1 style={{fontSize: '2.5rem'}}>{appConfig.gameName}</h1>
-      </div>
-
       {isGenerating && (
         <div style={overlay}><div style={modal} className="question-modal-animated"><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
       )}
 
       <div style={headerStyle}>
         <div style={teamSide} className={room?.team1?.isFrozen ? "frozen-team" : ""}>
-          <h2 style={teamName1}>{room?.team1?.name}</h2>
+          <h2 style={{color: "#3498db"}}>{room?.team1?.name}</h2>
           <div style={scoreTxt}>{room?.team1?.score}</div>
         </div>
         <div style={timerContainer}><div style={timerCircle}>{timer}</div></div>
         <div style={teamSide} className={room?.team2?.isFrozen ? "frozen-team" : ""}>
-          <h2 style={teamName2}>{room?.team2?.name}</h2>
+          <h2 style={{color: "#e74c3c"}}>{room?.team2?.name}</h2>
           <div style={scoreTxt}>{room?.team2?.score}</div>
         </div>
       </div>
@@ -254,12 +204,10 @@ export default function GamesPlay() {
   );
 }
 
-// التنسيقات (ثابتة كما في النسخة السابقة)
+// التنسيقات (نفس الستايل الاحترافي السابق)
 const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "40px 20px" };
 const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "30px", borderRadius: "30px", marginBottom: "60px", border: "1px solid #333" };
-const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" };
-const teamName1 = { margin: 0, color: "#3498db", fontSize: "24px" };
-const teamName2 = { margin: 0, color: "#e74c3c", fontSize: "24px" };
+const teamSide = { flex: 1, textAlign: "center" };
 const scoreTxt = { fontSize: "48px", fontWeight: "900", color: "#fff" };
 const timerContainer = { flex: "0 0 150px", display: "flex", justifyContent: "center" };
 const timerCircle = { width: "90px", height: "90px", borderRadius: "50%", border: "6px solid #f1c40f", display: "flex", justifyContent: "center", alignItems: "center", fontSize: "35px", fontWeight: "bold", background: "#fff", color: "#000" };
@@ -278,4 +226,3 @@ const resRow = { display: "flex", justifyContent: "center", gap: "20px" };
 const resBtn = { padding: "15px 40px", background: "#27ae60", color: "#fff", border: "none", borderRadius: "15px", cursor: "pointer", fontSize: "18px", fontWeight: "bold" };
 const revealBtn = { padding: "20px 60px", background: "#2c3e50", color: "#fff", border: "none", borderRadius: "50px", cursor: "pointer", fontSize: "20px" };
 const actionModal = { background: "#f1c40f", padding: "60px", borderRadius: "40px", border: "10px solid #fff", textAlign: "center" };
-const loadingStyle = { color: "#fff", textAlign: "center", marginTop: "100px", fontSize: "24px" };

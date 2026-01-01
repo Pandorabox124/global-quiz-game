@@ -5,11 +5,17 @@ import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 
-const genAI = new GoogleGenerativeAI("AIzaSyC6UqwzfzdL1oLQJy7TTcc_G8MP98FE4FI");
-const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
+// --- الإعداد المباشر (تم وضع المفتاح هنا بناءً على طلبك) ---
+const API_KEY = "AIzaSyC6UqwzfzdL1oLQJy7TTcc_G8MP98FE4FI";
+const genAI = new GoogleGenerativeAI(API_KEY);
+
+// استخدام الموديل المستقر لضمان عدم حدوث خطأ 404
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
 
 export default function GamesPlay() {
   const { roomId } = useParams();
+  
+  // الحالات (States)
   const [room, setRoom] = useState(null);
   const [timer, setTimer] = useState(60);
   const [isActive, setIsActive] = useState(false);
@@ -29,6 +35,7 @@ export default function GamesPlay() {
   const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
   const sndAction = useRef(new Audio("/sounds/button-19.mp3"));
 
+  // 1. الاتصال بـ Firebase لجلب بيانات الغرفة
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
       if (docSnap.exists()) {
@@ -41,6 +48,7 @@ export default function GamesPlay() {
     return () => unsub();
   }, [roomId]);
 
+  // 2. منطق العداد الزمني
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
@@ -56,28 +64,31 @@ export default function GamesPlay() {
     return () => clearInterval(interval);
   }, [isActive, timer]);
 
+  // دالة توليد السؤال (تم إصلاح استلام الـ Response هنا)
   const generateAIQuestion = async (catName, points) => {
     setIsGenerating(true);
-    const diff = points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب";
+    const diff = points === 200 ? "سهل جداً" : points === 400 ? "متوسط" : "صعب وللأذكياء";
     
-    // برومبت محسن لضمان استجابة سريعة ودقيقة
-    const prompt = `أنت خبير مسابقات. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON فقط: {"question": "نص السؤال", "answer": "الإجابة"}`;
+    const prompt = `أنت خبير مسابقات محترف. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. 
+    يجب أن يكون الرد بصيغة JSON فقط كالتالي: {"question": "نص السؤال", "answer": "الإجابة"}`;
 
     try {
       const result = await model.generateContent(prompt);
-      const text = result.response.text();
+      const response = await result.response; // انتظار الاستجابة
+      const text = response.text(); // استخراج النص
+      
       const cleanJson = text.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
     } catch (error) {
       console.error("AI Error:", error);
-      return { question: "حدث خطأ في جلب السؤال، جرب مرة أخرى", answer: "خطأ في الاتصال" };
+      return { question: "خطأ في الاتصال بالذكاء الاصطناعي، يرجى إعادة المحاولة.", answer: "خطأ فني" };
     } finally {
       setIsGenerating(false);
     }
   };
 
   const openQuestion = async (catName, points, teamKey) => {
-    if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد حالياً!");
+    if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد!");
     sndOpen.current.play().catch(() => {});
 
     const roomRef = doc(db, "rooms", roomId);
@@ -91,6 +102,7 @@ export default function GamesPlay() {
     const qId = `${catName}-${points}-${teamKey}`;
     if (usedQuestions.includes(qId)) return;
 
+    // منطق بطاقات الأكشن العشوائية
     if (!extraTurnActive && Math.random() < 0.15) {
       const cards = [
         { type: "BONUS", ar: "🎁 مضاعفة النقاط!", en: "🎁 Points Doubled!" },
@@ -122,39 +134,51 @@ export default function GamesPlay() {
   const fetchQuestionLogic = async (catName, points, teamKey) => {
     const aiData = await generateAIQuestion(catName, points);
     setCurrentQuestion({ ...aiData, team: teamKey, cat: catName, points: points });
-    setIsActive(true); setTimer(60); setShowAnswer(false);
+    setIsActive(true); 
+    setTimer(60); 
+    setShowAnswer(false);
   };
 
   const handleResult = async (isCorrect) => {
     const roomRef = doc(db, "rooms", roomId);
     isCorrect ? sndCorrect.current.play().catch(() => {}) : sndWrong.current.play().catch(() => {});
+    
     if (isCorrect) {
-      await updateDoc(roomRef, { [`${currentQuestion.team}.score`]: increment(currentQuestion.points) });
+      const multiplier = room[currentQuestion.team]?.nextBonus ? 2 : 1;
+      await updateDoc(roomRef, { 
+        [`${currentQuestion.team}.score`]: increment(currentQuestion.points * multiplier),
+        [`${currentQuestion.team}.nextBonus`]: false
+      });
     }
     setUsedQuestions(prev => [...prev, `${currentQuestion.cat}-${currentQuestion.points}-${currentQuestion.team}`]);
-    setCurrentQuestion(null); setIsActive(false);
+    setCurrentQuestion(null); 
+    setIsActive(false);
   };
 
-  if (!room) return <div style={{color: '#fff', textAlign: 'center', marginTop: '100px'}}>Loading...</div>;
+  if (!room) return <div className="loading">جاري تحميل الغرفة...</div>;
 
   return (
     <div style={mainContainer}>
       {isGenerating && (
-        <div style={overlay}><div style={modal} className="question-modal-animated"><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
+        <div style={overlay}><div style={modal}><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
       )}
 
+      {/* لوحة النتائج */}
       <div style={headerStyle}>
-        <div style={teamSide} className={room?.team1?.isFrozen ? "frozen-team" : ""}>
+        <div style={teamSide}>
           <h2 style={{color: "#3498db"}}>{room?.team1?.name}</h2>
           <div style={scoreTxt}>{room?.team1?.score}</div>
         </div>
-        <div style={timerContainer}><div style={timerCircle}>{timer}</div></div>
-        <div style={teamSide} className={room?.team2?.isFrozen ? "frozen-team" : ""}>
+        <div style={timerContainer}>
+          <div style={timerCircle}>{timer}</div>
+        </div>
+        <div style={teamSide}>
           <h2 style={{color: "#e74c3c"}}>{room?.team2?.name}</h2>
           <div style={scoreTxt}>{room?.team2?.score}</div>
         </div>
       </div>
 
+      {/* الشبكة */}
       <div style={gridStyle}>
         {allCategories.map((cat, idx) => (
           <div key={idx} style={ladderRow}>
@@ -162,14 +186,14 @@ export default function GamesPlay() {
               <div style={pointsBox}>
                 {[600, 400, 200].map(p => (
                   <button key={p} onClick={() => openQuestion(cat, p, 'team1')} disabled={usedQuestions.includes(`${cat}-${p}-team1`)} 
-                    style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team1`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team1`) ? "#666" : "#2c3e50" }}>{p}</button>
+                    style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team1`) ? "#444" : "#eee" }}>{p}</button>
                 ))}
               </div>
               <div style={catLabel}>{cat}</div>
               <div style={pointsBox}>
                 {[600, 400, 200].map(p => (
                   <button key={p} onClick={() => openQuestion(cat, p, 'team2')} disabled={usedQuestions.includes(`${cat}-${p}-team2`)} 
-                    style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team2`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team2`) ? "#666" : "#2c3e50" }}>{p}</button>
+                    style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team2`) ? "#444" : "#eee" }}>{p}</button>
                 ))}
               </div>
             </div>
@@ -177,49 +201,49 @@ export default function GamesPlay() {
         ))}
       </div>
 
+      {/* مودال السؤال */}
       {currentQuestion && (
         <div style={overlay}>
-          <div style={modal} className="question-modal-animated">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
-              <div style={{ background: timer <= 10 ? "#e74c3c" : "#2c3e50", color: "#fff", padding: "8px 15px", borderRadius: "15px", fontWeight: "bold" }}>⏱️ {timer}</div>
+          <div style={modal}>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px'}}>
+              <span style={badge}>{currentQuestion.cat}</span>
+              <span style={badge}>{timer} ثانية</span>
             </div>
-            {!showAnswer ? <h1 style={qText}>{currentQuestion.question}</h1> : <div style={answerBox}><h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1></div>}
+            {!showAnswer ? <h1 style={qText}>{currentQuestion.question}</h1> : <h1 style={{color:'#27ae60'}}>{currentQuestion.answer}</h1>}
             <div style={resRow}>
-              {showAnswer ? (
-                <><button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button><button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button></>
-              ) : <button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>}
+              {!showAnswer ? <button onClick={()=>setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button> : 
+              <><button onClick={()=>handleResult(true)} style={correctBtn}>صح ✅</button><button onClick={()=>handleResult(false)} style={wrongBtn}>خطأ ❌</button></>}
             </div>
           </div>
         </div>
       )}
 
       {showActionCard && (
-        <div style={overlay}><div style={actionModal} className="action-card-animated"><h1>{randomAction?.text}</h1></div></div>
+        <div style={overlay}><div style={actionModal}><h1>{randomAction?.text}</h1></div></div>
       )}
     </div>
   );
 }
 
-// التنسيقات (نفس الستايل الاحترافي السابق)
-const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "40px 20px" };
-const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "30px", borderRadius: "30px", marginBottom: "60px", border: "1px solid #333" };
-const teamSide = { flex: 1, textAlign: "center" };
-const scoreTxt = { fontSize: "48px", fontWeight: "900", color: "#fff" };
-const timerContainer = { flex: "0 0 150px", display: "flex", justifyContent: "center" };
-const timerCircle = { width: "90px", height: "90px", borderRadius: "50%", border: "6px solid #f1c40f", display: "flex", justifyContent: "center", alignItems: "center", fontSize: "35px", fontWeight: "bold", background: "#fff", color: "#000" };
-const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "25px", maxWidth: "1400px", margin: "0 auto" };
-const ladderRow = { background: "#262626", padding: "20px", borderRadius: "25px", border: "1px solid #333" };
+// التنسيقات (Styles)
+const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "20px" };
+const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "20px", borderRadius: "20px", marginBottom: "30px" };
+const teamSide = { textAlign: "center", flex: 1 };
+const scoreTxt = { fontSize: "3rem", color: "#fff", fontWeight: "bold" };
+const timerCircle = { width: "80px", height: "80px", borderRadius: "50%", background: "#fff", display: "flex", justifyContent: "center", alignItems: "center", fontSize: "2rem", fontWeight: "bold", border: "4px solid #f1c40f" };
+const timerContainer = { flex: "0 0 100px", display: "flex", justifyContent: "center" };
+const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: "20px" };
+const ladderRow = { background: "#262626", padding: "15px", borderRadius: "15px" };
 const questionCluster = { display: "flex", alignItems: "center", justifyContent: "space-between" };
-const pointsBox = { display: "flex", flexDirection: "column", gap: "10px" };
-const pBtn = { width: "80px", height: "55px", borderRadius: "15px", border: "none", cursor: "pointer", fontSize: "20px", fontWeight: "bold", transition: "0.3s" };
-const catLabel = { color: "#f1c40f", fontSize: "20px", fontWeight: "bold", textAlign: "center", flex: 1, padding: "0 10px" };
-const overlay = { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.95)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 2000 };
-const modal = { background: "#fff", padding: "50px", borderRadius: "40px", textAlign: "center", width: "90%", maxWidth: "700px" };
-const modalBadge = { background: "#f1c40f", padding: "8px 20px", borderRadius: "20px", display: "inline-block", marginBottom: "20px", fontWeight: "bold" };
-const qText = { fontSize: "2rem", color: "#2c3e50", margin: "30px 0" };
-const answerBox = { padding: "30px", background: "#f9f9f9", borderRadius: "20px", border: "2px solid #27ae60", margin: "20px 0" };
-const resRow = { display: "flex", justifyContent: "center", gap: "20px" };
-const resBtn = { padding: "15px 40px", background: "#27ae60", color: "#fff", border: "none", borderRadius: "15px", cursor: "pointer", fontSize: "18px", fontWeight: "bold" };
-const revealBtn = { padding: "20px 60px", background: "#2c3e50", color: "#fff", border: "none", borderRadius: "50px", cursor: "pointer", fontSize: "20px" };
-const actionModal = { background: "#f1c40f", padding: "60px", borderRadius: "40px", border: "10px solid #fff", textAlign: "center" };
+const pointsBox = { display: "flex", flexDirection: "column", gap: "8px" };
+const pBtn = { width: "60px", height: "45px", borderRadius: "10px", border: "none", fontWeight: "bold", cursor: "pointer" };
+const catLabel = { color: "#f1c40f", fontSize: "1.2rem", fontWeight: "bold", textAlign: "center", flex: 1 };
+const overlay = { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.9)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 };
+const modal = { background: "#fff", padding: "40px", borderRadius: "25px", textAlign: "center", width: "85%", maxWidth: "600px" };
+const badge = { background: "#eee", padding: "5px 15px", borderRadius: "10px", fontSize: "0.9rem" };
+const qText = { fontSize: "2rem", margin: "20px 0", color: "#333" };
+const resRow = { display: "flex", justifyContent: "center", gap: "15px", marginTop: "30px" };
+const revealBtn = { padding: "12px 30px", background: "#333", color: "#fff", borderRadius: "30px", border: "none", cursor: "pointer" };
+const correctBtn = { padding: "12px 25px", background: "#27ae60", color: "#fff", borderRadius: "10px", border: "none", cursor: "pointer" };
+const wrongBtn = { padding: "12px 25px", background: "#e74c3c", color: "#fff", borderRadius: "10px", border: "none", cursor: "pointer" };
+const actionModal = { background: "#f1c40f", padding: "50px", borderRadius: "30px", textAlign: "center", border: "5px solid #fff" };

@@ -21,8 +21,17 @@ export default function GamesPlay() {
   const [showRandomAction, setShowRandomAction] = useState(false);
   const [randomActionData, setRandomActionData] = useState(null);
 
-  const sndAction = useRef(new Audio("/sounds/action.mp3"));
-  const sndTick = useRef(new Audio("/sounds/tick.mp3"));
+  const sndTick = useRef(new Audio("public/sounds/button-19.mp3"));
+  const sndAction = useRef(new Audio("public/sounds/button-41.mp3"));
+  const sndCorrect = useRef(new Audio("public/sounds/bell-ringing-05.mp3"));
+  const sndWrong = useRef(new Audio("public/sounds/button-10.mp3"));
+
+  const playSound = (soundRef) => {
+    if (soundRef.current) {
+      soundRef.current.currentTime = 0;
+      soundRef.current.play().catch(() => {});
+    }
+  };
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {

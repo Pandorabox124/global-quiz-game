@@ -73,8 +73,18 @@ export default function GamesPlay() {
 
   const openQuestion = async (catName, points, teamKey) => {
     if (room?.[teamKey]?.isFrozen) return alert(room.lang === 'ar' ? "فريقك مجمد!" : "Team is frozen!");
+    
     const roomRef = doc(db, "rooms", roomId);
+    
+    // --- إضافة: تأمين مزامنة اللغة قبل طلب السؤال ---
+    // هذا يضمن أن أي تغيير قمت به في واجهة المطور قد وصل لـ Firebase
+    if (room.lang !== document.documentElement.lang && document.documentElement.lang !== "") {
+       await updateDoc(roomRef, { lang: document.documentElement.lang });
+    }
+    // ------------------------------------------
+
     let finalTeam = teamKey;
+    // ... بقية الكود كما هو
 
     if (room?.stealNextQuestion && room.stealNextQuestion !== teamKey) {
       finalTeam = room.stealNextQuestion;
@@ -123,6 +133,7 @@ export default function GamesPlay() {
     const pts = currentQuestion.points;
     const currentTeamKey = currentQuestion.team;
 
+    // معالجة النقاط أولاً
     if (room?.isFaultActive) {
       const targetTeam = isCorrect ? room.faultBy : currentTeamKey;
       const amount = isCorrect ? (pts / 2) : -(pts / 2);
@@ -136,9 +147,10 @@ export default function GamesPlay() {
       await updateDoc(roomRef, { [`${currentTeamKey}.score`]: increment(finalPts) });
     }
 
+    // منطق التعديل الأخير: السؤال الإضافي
     if (extraTurnActive) {
       setExtraTurnActive(false);
-      alert(room.lang === 'ar' ? "🎁 سؤال إضافي لنفس الفريق!" : "🎁 Extra question!");
+      alert(room.lang === 'ar' ? "🎁 سؤال إضافي لنفس الفريق!" : "🎁 Extra question for the same team!");
       const newAiData = await generateAIQuestion(currentQuestion.cat, currentQuestion.points);
       setCurrentQuestion({ ...newAiData, team: currentTeamKey, cat: currentQuestion.cat, points: currentQuestion.points });
       setShowAnswer(false); setTimer(60); setIsActive(true);
@@ -249,7 +261,7 @@ export default function GamesPlay() {
   );
 }
 
-// التنسيقات
+// التنسيقات (مختصرة للأداء)
 const badgeStyle = { background: '#f39c12', color: 'white', padding: '6px 16px', borderRadius: '20px', fontWeight: 'bold' };
 const qTextResponsive = { fontSize: "1.7rem", margin: "25px 0", wordWrap: "break-word" };
 const answerBox = { padding: '25px', background: '#fdfdfd', borderRadius: '20px', border: '3px solid #2ecc71' };

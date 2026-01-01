@@ -10,7 +10,7 @@ const API_KEY = "AIzaSyC6UqwzfzdL1oLQJy7TTcc_G8MP98FE4FI";
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 // استخدام الموديل المستقر لضمان عدم حدوث خطأ 404
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); 
 
 export default function GamesPlay() {
   const { roomId } = useParams();

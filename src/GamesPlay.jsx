@@ -302,7 +302,16 @@ function TeamPanel({ team, teamKey, onAct, isTurn, color }) {
 }
 
 const styles = {
-  mainContainer: { background: "#0a0a23", minHeight: "100vh", padding: "20px", color: "#fff", direction: 'rtl', fontFamily: 'sans-serif' },
+  mainContainer: { 
+    background: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)", 
+    minHeight: "100vh", 
+    padding: "20px", 
+    color: "#fff", 
+    direction: 'rtl', 
+    fontFamily: 'sans-serif',
+    backgroundSize: "400% 400%",
+    animation: "gradientAnimation 15s ease infinite"
+  },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px" },
   teamBox: { background: "rgba(255,255,255,0.05)", padding: "15px", borderRadius: "15px", flex: 1, textAlign: "center" },
   score: { fontSize: "2.2rem", fontWeight: "bold", color: "#f1c40f" },

@@ -222,23 +222,50 @@ export default function GamesPlay() {
         ))}
       </div>
 
-      {currentQuestion && (
-        <div style={overlay}>
-          {/* إضافة أنيميشن السؤال */}
-          <div style={modal} className="question-modal-animated">
-            <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
-            {!showAnswer ? (<h1 style={qText}>{currentQuestion.question}</h1>) : (
-              <div style={answerBox}><h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1></div>
-            )}
-            <div style={resRow}>
-              {showAnswer ? (
-                <><button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button>
-                  <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button></>
-              ) : (<button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>)}
-            </div>
-          </div>
+      {/* مودال السؤال المحدث */}
+{currentQuestion && (
+  <div style={overlay}>
+    <div style={modal} className="question-modal-animated">
+      {/* شريط علوي يحتوي على الفئة، النقاط، والوقت */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
+        
+        {/* إضافة العداد هنا ليظهر داخل الواجهة */}
+        <div style={{ 
+          background: timer <= 10 ? "#e74c3c" : "#2c3e50", 
+          color: "#fff", 
+          padding: "8px 15px", 
+          borderRadius: "15px", 
+          fontWeight: "bold",
+          fontSize: "1.2rem",
+          minWidth: "60px",
+          transition: "all 0.3s"
+        }}>
+          ⏱️ {timer}
+        </div>
+      </div>
+
+      {!showAnswer ? (
+        <h1 style={qText}>{currentQuestion.question}</h1>
+      ) : (
+        <div style={answerBox}>
+          <h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1>
         </div>
       )}
+
+      <div style={resRow}>
+        {showAnswer ? (
+          <>
+            <button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button>
+            <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button>
+          </>
+        ) : (
+          <button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>
+        )}
+      </div>
+    </div>
+  </div>
+)}
 
       {showActionCard && (
         <div style={overlay}>

@@ -167,29 +167,66 @@ export default function GamesPlay() {
           </div>
         ))}
       </div>
+{currentQuestion && (
+  <div style={styles.overlay}>
+    <div style={styles.qModal}>
+      
+      {/* 1. الهيدر (الفئة والتوقيت) */}
+      <div style={styles.modalHeader}>
+        <span>{currentQuestion.cat} ({currentQuestion.points} نقطة)</span>
+        <span style={styles.timerDisplay}>⏱️ {timer}s</span>
+      </div>
 
-      {currentQuestion && (
-        <div style={styles.overlay}>
-          <div style={styles.qModal}>
-            <div style={styles.modalHeader}>
-              <span>{currentQuestion.cat} ({currentQuestion.points})</span>
-              <span style={styles.timerDisplay}>⏱️ {timer}s</span>
-            </div>
-            {currentQuestion.isChallenge && <div style={styles.alertBar}>⚠️ تحدي إجباري للفريق الآخر!</div>}
-            <h1 style={!showAnswer ? styles.qText : styles.aText}>{!showAnswer ? currentQuestion.question : currentQuestion.answer}</h1>
-            <div style={styles.modalFooter}>
-              {!showAnswer ? (
-                <button onClick={() => setShowAnswer(true)} style={styles.actionBtn}>كشف الإجابة</button>
-              ) : (
-                <div style={{display: 'flex', gap: '10px', width: '100%'}}>
-                  <button onClick={() => handleResult(true)} style={styles.corBtn}>صح ✅</button>
-                  <button onClick={() => handleResult(false)} style={styles.wrgBtn}>خطأ ❌</button>
-                </div>
-              )}
-            </div>
-          </div>
+      {/* --- 2. منطقة أزرار الأكشن للفريقين (يمين ويسار) --- */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '10px', background: 'rgba(0,0,0,0.03)', borderRadius: '15px' }}>
+        
+        {/* أكشن الفريق الأول (أزرق) */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', width: '45%', justifyContent: 'flex-start' }}>
+          {room?.team1?.actions?.map((act, i) => (
+            <button key={i} onClick={() => triggerTeamAction(act, 'team1')} 
+              style={{ ...styles.modalActionBtn, background: '#3498db' }}>{act}</button>
+          ))}
         </div>
-      )}
+
+        {/* فاصل بسيط */}
+        <div style={{ fontWeight: 'bold', color: '#ccc' }}>VS</div>
+
+        {/* أكشن الفريق الثاني (أحمر) */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', width: '45%', justifyContent: 'flex-end' }}>
+          {room?.team2?.actions?.map((act, i) => (
+            <button key={i} onClick={() => triggerTeamAction(act, 'team2')} 
+              style={{ ...styles.modalActionBtn, background: '#e74c3c' }}>{act}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3. تنبيهات الأكشن النشطة (إذا تم ضغط فاول أو دبل) */}
+      <div style={{ marginBottom: '15px' }}>
+        {currentQuestion.isChallenge && <div style={styles.alertBar}>🚩 {room[currentQuestion.challengeBy]?.name} استخدم الفاول!</div>}
+        {currentQuestion.isDouble && <div style={{...styles.alertBar, background: '#fff9db', color: '#f08c00'}}>🚀 نقاط مضاعفة حالياً!</div>}
+      </div>
+
+      {/* 4. نص السؤال والجواب */}
+      <h1 style={!showAnswer ? styles.qText : styles.aText}>
+        {!showAnswer ? currentQuestion.question : currentQuestion.answer}
+      </h1>
+
+      {/* 5. أزرار التحكم بالنتيجة */}
+      <div style={styles.modalFooter}>
+        {!showAnswer ? (
+          <button onClick={() => { setShowAnswer(true); playSound(sndTick); }} style={styles.actionBtn}>كشف الإجابة</button>
+        ) : (
+          <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+            <button onClick={() => handleResult(true)} style={styles.corBtn}>صح ✅</button>
+            <button onClick={() => handleResult(false)} style={styles.wrgBtn}>خطأ ❌</button>
+          </div>
+        )}
+      </div>
+      
+    </div>
+  </div>
+)}
+      
 
       {showRandomAction && (
         <div style={styles.overlay}>
@@ -242,5 +279,26 @@ const styles = {
   corBtn: { flex: 1, padding: "15px", background: "#27ae60", color: "#fff", border: "none", borderRadius: "12px" },
   wrgBtn: { flex: 1, padding: "15px", background: "#e74c3c", color: "#fff", border: "none", borderRadius: "12px" },
   randomCard: { padding: "50px", borderRadius: "20px", color: "#fff", textAlign: "center", minWidth: "300px" },
-  alertBar: { background: "#ffeaea", color: "#e74c3c", padding: "10px", borderRadius: "10px", marginBottom: "15px", fontWeight: "bold" }
-};
+  alertBar: { background: "#ffeaea", color: "#e74c3c", padding: "10px", borderRadius: "10px", marginBottom: "15px", fontWeight: "bold" },
+miniActBtnInModal: {
+  padding: "8px 12px",
+  background: '#2c3e50',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontSize: '1rem',
+  fontWeight: 'bold',
+  transition: '0.3s'},
+modalActionBtn: {
+  padding: '6px 10px',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontSize: '0.8rem',
+  fontWeight: 'bold',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+  transition: '0.2s active'
+},
+},

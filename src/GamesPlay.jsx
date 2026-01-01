@@ -3,11 +3,12 @@ import { useParams } from "react-router-dom";
 import { db } from "./firebase";
 import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-// --- إضافة ربط ملف الأنيميشن هنا ---
+// ربط ملف الأنيميشن
 import './GamesPlay.css'; 
 
+// إعداد الذكاء الاصطناعي بالموديل المستقر
 const genAI = new GoogleGenerativeAI("AIzaSyDHTNSBI9MM9qPvVUDIPLwSqq36vA1YNNg");
-const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
 
 export default function GamesPlay() {
   const { roomId } = useParams();
@@ -23,12 +24,14 @@ export default function GamesPlay() {
   const [extraTurnActive, setExtraTurnActive] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // مراجع ملفات الصوت
   const sndTick = useRef(new Audio("/sounds/button-41.mp3"));
   const sndOpen = useRef(new Audio("/sounds/button-3.mp3"));
   const sndCorrect = useRef(new Audio("/sounds/bell-ringing-05.mp3"));
   const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
   const sndAction = useRef(new Audio("/sounds/button-19.mp3"));
 
+  // جلب بيانات الغرفة من Firebase
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
       if (docSnap.exists()) {
@@ -41,6 +44,7 @@ export default function GamesPlay() {
     return () => unsub();
   }, [roomId]);
 
+  // منطق العداد (Timer)
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
@@ -56,34 +60,33 @@ export default function GamesPlay() {
     return () => clearInterval(interval);
   }, [isActive, timer]);
 
+  // دالة توليد السؤال عبر الذكاء الاصطناعي
   const generateAIQuestion = async (catName, points) => {
     setIsGenerating(true);
     const lang = room?.lang || 'ar';
-    const difficultyMap = {
-      ar: points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب",
-      en: points === 200 ? "Easy" : points === 400 ? "Medium" : "Hard"
-    };
-    const diff = difficultyMap[lang] || difficultyMap['en'];
-    const prompts = {
-      ar: `أنت خبير مسابقات. أنتج سؤالاً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON: {"question": "نص السؤال", "answer": "الإجابة"}`,
-      en: `Quiz expert. Category "${catName}". Difficulty: ${diff}. JSON: {"question": "text", "answer": "text"}`
-    };
+    const diff = points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب";
+    
+    const prompt = `أنت خبير مسابقات. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. 
+    المطلوب رد بصيغة JSON فقط: {"question": "نص السؤال", "answer": "الإجابة"}`;
 
     try {
-      const result = await model.generateContent(prompts[lang] || prompts['en']);
+      const result = await model.generateContent(prompt);
       const text = result.response.text();
       const cleanJson = text.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
     } catch (error) {
-      return { question: "Error loading question", answer: "Try again" };
-    } finally { setIsGenerating(false); }
+      console.error("AI Error:", error);
+      return { question: "فشل في جلب السؤال", answer: "حاول مرة أخرى" };
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
+  // فتح السؤال والتحقق من بطاقات الأكشن
   const openQuestion = async (catName, points, teamKey) => {
-    if (room?.[teamKey]?.isFrozen) return alert(room.lang === 'ar' ? "فريقك مجمد!" : "Team is frozen!");
+    if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد حالياً!");
     
     sndOpen.current.play().catch(() => {});
-
     const roomRef = doc(db, "rooms", roomId);
     let finalTeam = teamKey;
 
@@ -95,6 +98,7 @@ export default function GamesPlay() {
     const qId = `${catName}-${points}-${teamKey}`;
     if (usedQuestions.includes(qId)) return;
 
+    // احتمالية ظهور بطاقة أكشن عشوائية (15%)
     if (!extraTurnActive && Math.random() < 0.15) {
       const cards = [
         { type: "BONUS", ar: "🎁 مضاعفة النقاط!", en: "🎁 Points Doubled!" },
@@ -103,15 +107,14 @@ export default function GamesPlay() {
         { type: "DELETE", ar: "🗑️ حذف السؤال!", en: "🗑️ Question Deleted!" }
       ];
       const card = cards[Math.floor(Math.random() * cards.length)];
-      setRandomAction({ ...card, text: card[room.lang] || card['en'] });
+      setRandomAction({ ...card, text: card[lang === 'ar' ? 'ar' : 'en'] });
       setShowActionCard(true);
-      
       sndAction.current.play().catch(() => {});
 
       setTimeout(async () => {
         setShowActionCard(false);
         if (card.type === "DELETE") {
-           setUsedQuestions(prev => [...prev, qId]);
+          setUsedQuestions(prev => [...prev, qId]);
         } else {
           if (card.type === "PENALTY") await updateDoc(roomRef, { [`${finalTeam}.score`]: increment(-200) });
           if (card.type === "BONUS") await updateDoc(roomRef, { [`${finalTeam}.nextBonus`]: true });
@@ -130,91 +133,58 @@ export default function GamesPlay() {
     setIsActive(true); setTimer(60); setShowAnswer(false);
   };
 
+  // معالجة نتيجة الإجابة
   const handleResult = async (isCorrect) => {
     const roomRef = doc(db, "rooms", roomId);
-    const pts = currentQuestion.points;
-    const currentTeamKey = currentQuestion.team;
+    isCorrect ? sndCorrect.current.play().catch(() => {}) : sndWrong.current.play().catch(() => {});
 
     if (isCorrect) {
-      sndCorrect.current.play().catch(() => {});
-    } else {
-      sndWrong.current.play().catch(() => {});
+      await updateDoc(roomRef, { [`${currentQuestion.team}.score`]: increment(currentQuestion.points) });
     }
 
-    if (room?.isFaultActive) {
-      const targetTeam = isCorrect ? room.faultBy : currentTeamKey;
-      const amount = isCorrect ? (pts / 2) : -(pts / 2);
-      await updateDoc(roomRef, { [`${targetTeam}.score`]: increment(amount), isFaultActive: false, faultBy: null });
-    } else if (isCorrect) {
-      let finalPts = pts;
-      if (room?.[currentTeamKey]?.nextBonus) {
-        finalPts = pts * 2;
-        await updateDoc(roomRef, { [`${currentTeamKey}.nextBonus`]: false });
-      }
-      await updateDoc(roomRef, { [`${currentTeamKey}.score`]: increment(finalPts) });
-    }
-
-    if (extraTurnActive) {
-      setExtraTurnActive(false);
-      const newAiData = await generateAIQuestion(currentQuestion.cat, currentQuestion.points);
-      setCurrentQuestion({ ...newAiData, team: currentTeamKey, cat: currentQuestion.cat, points: currentQuestion.points });
-      setShowAnswer(false); setTimer(60); setIsActive(true);
-    } else {
-      setUsedQuestions(prev => [...prev, `${currentQuestion.cat}-${currentQuestion.points}-${currentQuestion.team}`]);
-      setCurrentQuestion(null); setIsActive(false); setShowAnswer(false);
-    }
-  };
-
-  const useAction = async (teamKey, act) => {
-    const roomRef = doc(db, "rooms", roomId);
-    const opponent = teamKey === "team1" ? "team2" : "team1";
-    if (act.match(/تجميد|Freeze/)) {
-      await updateDoc(roomRef, { [`${opponent}.isFrozen`]: true });
-      setTimeout(() => updateDoc(roomRef, { [`${opponent}.isFrozen`]: false }), 30000);
-    } 
-    else if (act.match(/سرقة|Steal/)) {
-      await updateDoc(roomRef, { [`${teamKey}.score`]: increment(200), [`${opponent}.score`]: increment(-200) });
-    }
-    const updatedActions = room[teamKey].actions.filter(a => a !== act);
-    await updateDoc(roomRef, { [`${teamKey}.actions`]: updatedActions });
+    setUsedQuestions(prev => [...prev, `${currentQuestion.cat}-${currentQuestion.points}-${currentQuestion.team}`]);
+    setCurrentQuestion(null); 
+    setIsActive(false);
   };
 
   if (!room) return <div style={loadingStyle}>Loading...</div>;
 
   return (
     <div style={mainContainer}>
+      {/* واجهة التحميل أثناء توليد السؤال */}
       {isGenerating && (
         <div style={overlay}><div style={modal} className="question-modal-animated"><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
       )}
 
+      {/* الرأس: يعرض الفرق والنتائج والعداد الرئيسي */}
       <div style={headerStyle}>
-        {/* تفعيل كلاس التجميد */}
         <div style={teamSide} className={room?.team1?.isFrozen ? "frozen-team" : ""}>
           <h2 style={teamName1}>{room?.team1?.name}</h2>
           <div style={scoreTxt}>{room?.team1?.score}</div>
-          <div style={actRow}>{room?.team1?.actions?.map(a => (<button key={a} onClick={() => useAction('team1', a)} style={actBtn}>{a}</button>))}</div>
         </div>
         <div style={timerContainer}><div style={timerCircle}>{timer}</div></div>
         <div style={teamSide} className={room?.team2?.isFrozen ? "frozen-team" : ""}>
           <h2 style={teamName2}>{room?.team2?.name}</h2>
           <div style={scoreTxt}>{room?.team2?.score}</div>
-          <div style={actRow}>{room?.team2?.actions?.map(a => (<button key={a} onClick={() => useAction('team2', a)} style={actBtn}>{a}</button>))}</div>
         </div>
       </div>
 
+      {/* لوحة الفئات والأسئلة */}
       <div style={gridStyle}>
         {allCategories.map((cat, idx) => (
           <div key={idx} style={ladderRow}>
             <div style={questionCluster}>
               <div style={pointsBox}>
                 {[600, 400, 200].map(p => (
-                  <button key={p} onClick={() => openQuestion(cat, p, 'team1')} disabled={usedQuestions.includes(`${cat}-${p}-team1`)} style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team1`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team1`) ? "#666" : "#2c3e50" }}>{p}</button>
+                  <button key={p} onClick={() => openQuestion(cat, p, 'team1')} disabled={usedQuestions.includes(`${cat}-${p}-team1`)} 
+                    style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team1`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team1`) ? "#666" : "#2c3e50" }}>{p}</button>
                 ))}
               </div>
               <div style={catLabel}>{cat}</div>
               <div style={pointsBox}>
                 {[600, 400, 200].map(p => (
-                  <button key={p} onClick={() => openQuestion(cat, p, 'team2')} disabled={usedQuestions.includes(`${cat}-${p}-team2`)} style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team2`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team2`) ? "#666" : "#2c3e50" }}>{p}</button>
+                  <button key={p} onClick={() => openQuestion(cat, p, 'team2')} disabled={usedQuestions.includes(`${cat}-${p}-team2`)} 
+                    style={{ ...pBtn, background: usedQuestions.includes(`${cat}-${p}-team2`) ? "#333" : "#f5f5f5", color: usedQuestions.includes(`${cat}-${p}-team2`) ? "#666" : "#2c3e50" }}>{p}</button>
                 ))}
               </div>
             </div>
@@ -222,65 +192,44 @@ export default function GamesPlay() {
         ))}
       </div>
 
-      {/* مودال السؤال المحدث */}
-{currentQuestion && (
-  <div style={overlay}>
-    <div style={modal} className="question-modal-animated">
-      {/* شريط علوي يحتوي على الفئة، النقاط، والوقت */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
-        
-        {/* إضافة العداد هنا ليظهر داخل الواجهة */}
-        <div style={{ 
-          background: timer <= 10 ? "#e74c3c" : "#2c3e50", 
-          color: "#fff", 
-          padding: "8px 15px", 
-          borderRadius: "15px", 
-          fontWeight: "bold",
-          fontSize: "1.2rem",
-          minWidth: "60px",
-          transition: "all 0.3s"
-        }}>
-          ⏱️ {timer}
-        </div>
-      </div>
+      {/* نافذة السؤال (تظهر عند اختيار سؤال) */}
+      {currentQuestion && (
+        <div style={overlay}>
+          <div style={modal} className="question-modal-animated">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
+              {/* التوقيت داخل النافذة */}
+              <div style={{ background: timer <= 10 ? "#e74c3c" : "#2c3e50", color: "#fff", padding: "8px 15px", borderRadius: "15px", fontWeight: "bold", fontSize: "1.2rem" }}>⏱️ {timer}</div>
+            </div>
 
-      {!showAnswer ? (
-        <h1 style={qText}>{currentQuestion.question}</h1>
-      ) : (
-        <div style={answerBox}>
-          <h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1>
+            {!showAnswer ? (
+              <h1 style={qText}>{currentQuestion.question}</h1>
+            ) : (
+              <div style={answerBox}><h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1></div>
+            )}
+
+            <div style={resRow}>
+              {showAnswer ? (
+                <><button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button>
+                  <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button></>
+              ) : (<button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>)}
+            </div>
+          </div>
         </div>
       )}
 
-      <div style={resRow}>
-        {showAnswer ? (
-          <>
-            <button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button>
-            <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button>
-          </>
-        ) : (
-          <button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
+      {/* بطاقة الأكشن المفاجئة */}
       {showActionCard && (
-        <div style={overlay}>
-           {/* إضافة أنيميشن بطاقة الأكشن */}
-          <div style={actionModal} className="action-card-animated"><h1>{randomAction?.text}</h1></div>
-        </div>
+        <div style={overlay}><div style={actionModal} className="action-card-animated"><h1>{randomAction?.text}</h1></div></div>
       )}
     </div>
   );
 }
 
-// التنسيقات
+// التنسيقات (Styles)
 const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "40px 20px" };
 const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "30px", borderRadius: "30px", marginBottom: "60px", border: "1px solid #333" };
-const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", transition: "all 0.3s ease" };
+const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" };
 const teamName1 = { margin: 0, color: "#3498db", fontSize: "24px" };
 const teamName2 = { margin: 0, color: "#e74c3c", fontSize: "24px" };
 const scoreTxt = { fontSize: "48px", fontWeight: "900", color: "#fff" };
@@ -300,7 +249,5 @@ const answerBox = { padding: "30px", background: "#f9f9f9", borderRadius: "20px"
 const resRow = { display: "flex", justifyContent: "center", gap: "20px" };
 const resBtn = { padding: "15px 40px", background: "#27ae60", color: "#fff", border: "none", borderRadius: "15px", cursor: "pointer", fontSize: "18px", fontWeight: "bold" };
 const revealBtn = { padding: "20px 60px", background: "#2c3e50", color: "#fff", border: "none", borderRadius: "50px", cursor: "pointer", fontSize: "20px" };
-const actRow = { display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" };
-const actBtn = { padding: "5px 12px", borderRadius: "8px", border: "1px solid #555", background: "#333", color: "#ccc", fontSize: "12px", cursor: "pointer" };
 const actionModal = { background: "#f1c40f", padding: "60px", borderRadius: "40px", border: "10px solid #fff", textAlign: "center" };
 const loadingStyle = { color: "#fff", textAlign: "center", marginTop: "100px", fontSize: "24px" };

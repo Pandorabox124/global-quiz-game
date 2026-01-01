@@ -7,7 +7,7 @@ import './GamesPlay.css';
 
 const API_KEY = "AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q"; 
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
+const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
 
 export default function GamesPlay() {
   const { roomId } = useParams();

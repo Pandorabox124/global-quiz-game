@@ -5,9 +5,11 @@ import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+// --- وضع المفتاح مباشرة هنا (تم كنسلة فكرة التشفير بناءً على طلبك) ---
+const API_KEY = "AIzaSyBo07aGN6VNjx3ovNs71JSWSYS04PxDJ4Q"; 
+const genAI = new GoogleGenerativeAI(API_KEY);
 
-// الموديل المستقر
+// استخدام الموديل المستقر 1.5 لتجنب خطأ 404
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
 
 export default function GamesPlay() {
@@ -24,13 +26,14 @@ export default function GamesPlay() {
   const [extraTurnActive, setExtraTurnActive] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // الأصوات
+  // مراجع الأصوات
   const sndTick = useRef(new Audio("/sounds/button-41.mp3"));
   const sndOpen = useRef(new Audio("/sounds/button-3.mp3"));
   const sndCorrect = useRef(new Audio("/sounds/bell-ringing-05.mp3"));
   const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
   const sndAction = useRef(new Audio("/sounds/button-19.mp3"));
 
+  // جلب بيانات الغرفة
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
       if (docSnap.exists()) {
@@ -43,6 +46,7 @@ export default function GamesPlay() {
     return () => unsub();
   }, [roomId]);
 
+  // عداد الوقت
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
@@ -58,15 +62,17 @@ export default function GamesPlay() {
     return () => clearInterval(interval);
   }, [isActive, timer]);
 
+  // دالة توليد السؤال
   const generateAIQuestion = async (catName, points) => {
     setIsGenerating(true);
     const diff = points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب";
-    const prompt = `أنت خبير مسابقات. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON فقط: {"question": "نص السؤال", "answer": "الإجابة"}`;
+    const prompt = `أنت خبير مسابقات محترف. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. المطلوب رد بصيغة JSON فقط: {"question": "نص السؤال", "answer": "الإجابة"}`;
 
     try {
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
+      // تنظيف النص لضمان تحويله لـ JSON
       const cleanJson = text.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
     } catch (error) {
@@ -123,12 +129,15 @@ export default function GamesPlay() {
   const fetchQuestionLogic = async (catName, points, teamKey) => {
     const aiData = await generateAIQuestion(catName, points);
     setCurrentQuestion({ ...aiData, team: teamKey, cat: catName, points: points });
-    setIsActive(true); setTimer(60); setShowAnswer(false);
+    setIsActive(true); 
+    setTimer(60); 
+    setShowAnswer(false);
   };
 
   const handleResult = async (isCorrect) => {
     const roomRef = doc(db, "rooms", roomId);
     isCorrect ? sndCorrect.current.play().catch(() => {}) : sndWrong.current.play().catch(() => {});
+    
     if (isCorrect) {
       const mult = room[currentQuestion.team]?.nextBonus ? 2 : 1;
       await updateDoc(roomRef, { 
@@ -137,7 +146,8 @@ export default function GamesPlay() {
       });
     }
     setUsedQuestions(prev => [...prev, `${currentQuestion.cat}-${currentQuestion.points}-${currentQuestion.team}`]);
-    setCurrentQuestion(null); setIsActive(false);
+    setCurrentQuestion(null); 
+    setIsActive(false);
   };
 
   if (!room) return <div style={{color:'#fff', textAlign:'center', marginTop:'100px'}}>Loading...</div>;
@@ -145,10 +155,9 @@ export default function GamesPlay() {
   return (
     <div style={styles.mainContainer}>
       {isGenerating && (
-        <div style={styles.overlay}><div style={styles.modal}><h2>⚡ جاري استدعاء السؤال من الذكاء الاصطناعي...</h2></div></div>
+        <div style={styles.overlay}><div style={styles.modal}><h2>⚡ جاري توليد السؤال...</h2></div></div>
       )}
       
-      {/* واجهة اللعبة المعتادة */}
       <div style={styles.header}>
         <div style={styles.team}><h3>{room.team1.name}</h3><div style={styles.score}>{room.team1.score}</div></div>
         <div style={styles.timer}>{timer}</div>
@@ -193,7 +202,6 @@ export default function GamesPlay() {
   );
 }
 
-// التنسيقات السريعة داخل الكود لضمان العمل
 const styles = {
   mainContainer: { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "20px", color: "#fff" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px", background: "#262626", padding: "20px", borderRadius: "15px" },
@@ -203,7 +211,7 @@ const styles = {
   grid: { display: "grid", gap: "15px" },
   row: { display: "flex", alignItems: "center", background: "#262626", padding: "15px", borderRadius: "12px" },
   pointsGroup: { display: "flex", flexDirection: "column", gap: "5px" },
-  pBtn: { padding: "10px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: "bold" },
+  pBtn: { padding: "10px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: "bold", background: "#eee" },
   catName: { flex: 1, textAlign: "center", fontSize: "1.2rem", color: "#f1c40f" },
   overlay: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.9)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 },
   modal: { background: "#fff", color: "#000", padding: "30px", borderRadius: "20px", textAlign: "center", width: "90%", maxWidth: "600px" },

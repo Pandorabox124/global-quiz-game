@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { db } from "./firebase";
 import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+// --- إضافة ربط ملف الأنيميشن هنا ---
+import './GamesPlay.css'; 
 
 const genAI = new GoogleGenerativeAI("AIzaSyDipJccwc20r4YLdAGRN5Ji6xBCSxvCLOs");
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); 
@@ -21,6 +23,12 @@ export default function GamesPlay() {
   const [extraTurnActive, setExtraTurnActive] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const sndTick = useRef(new Audio("/sounds/button-41.mp3"));
+  const sndOpen = useRef(new Audio("/sounds/button-3.mp3"));
+  const sndCorrect = useRef(new Audio("/sounds/bell-ringing-05.mp3"));
+  const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
+  const sndAction = useRef(new Audio("/sounds/button-19.mp3"));
+
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
       if (docSnap.exists()) {
@@ -36,7 +44,11 @@ export default function GamesPlay() {
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
-      interval = setInterval(() => setTimer(t => t - 1), 1000);
+      interval = setInterval(() => {
+        setTimer(t => t - 1);
+        sndTick.current.currentTime = 0;
+        sndTick.current.play().catch(() => {}); 
+      }, 1000);
     } else if (timer === 0 && isActive) {
       setShowAnswer(true);
       setIsActive(false);
@@ -69,6 +81,9 @@ export default function GamesPlay() {
 
   const openQuestion = async (catName, points, teamKey) => {
     if (room?.[teamKey]?.isFrozen) return alert(room.lang === 'ar' ? "فريقك مجمد!" : "Team is frozen!");
+    
+    sndOpen.current.play().catch(() => {});
+
     const roomRef = doc(db, "rooms", roomId);
     let finalTeam = teamKey;
 
@@ -90,6 +105,8 @@ export default function GamesPlay() {
       const card = cards[Math.floor(Math.random() * cards.length)];
       setRandomAction({ ...card, text: card[room.lang] || card['en'] });
       setShowActionCard(true);
+      
+      sndAction.current.play().catch(() => {});
 
       setTimeout(async () => {
         setShowActionCard(false);
@@ -117,6 +134,12 @@ export default function GamesPlay() {
     const roomRef = doc(db, "rooms", roomId);
     const pts = currentQuestion.points;
     const currentTeamKey = currentQuestion.team;
+
+    if (isCorrect) {
+      sndCorrect.current.play().catch(() => {});
+    } else {
+      sndWrong.current.play().catch(() => {});
+    }
 
     if (room?.isFaultActive) {
       const targetTeam = isCorrect ? room.faultBy : currentTeamKey;
@@ -161,29 +184,24 @@ export default function GamesPlay() {
   return (
     <div style={mainContainer}>
       {isGenerating && (
-        <div style={overlay}><div style={modal}><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
+        <div style={overlay}><div style={modal} className="question-modal-animated"><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
       )}
 
-      {/* الهيدر المحسن لمنع التداخل */}
       <div style={headerStyle}>
-        <div style={teamSide}>
+        {/* تفعيل كلاس التجميد */}
+        <div style={teamSide} className={room?.team1?.isFrozen ? "frozen-team" : ""}>
           <h2 style={teamName1}>{room?.team1?.name}</h2>
           <div style={scoreTxt}>{room?.team1?.score}</div>
           <div style={actRow}>{room?.team1?.actions?.map(a => (<button key={a} onClick={() => useAction('team1', a)} style={actBtn}>{a}</button>))}</div>
         </div>
-
-        <div style={timerContainer}>
-          <div style={timerCircle}>{timer}</div>
-        </div>
-
-        <div style={teamSide}>
+        <div style={timerContainer}><div style={timerCircle}>{timer}</div></div>
+        <div style={teamSide} className={room?.team2?.isFrozen ? "frozen-team" : ""}>
           <h2 style={teamName2}>{room?.team2?.name}</h2>
           <div style={scoreTxt}>{room?.team2?.score}</div>
           <div style={actRow}>{room?.team2?.actions?.map(a => (<button key={a} onClick={() => useAction('team2', a)} style={actBtn}>{a}</button>))}</div>
         </div>
       </div>
 
-      {/* مساحة الأسئلة */}
       <div style={gridStyle}>
         {allCategories.map((cat, idx) => (
           <div key={idx} style={ladderRow}>
@@ -204,15 +222,13 @@ export default function GamesPlay() {
         ))}
       </div>
 
-      {/* مودال السؤال */}
       {currentQuestion && (
         <div style={overlay}>
-          <div style={modal}>
+          {/* إضافة أنيميشن السؤال */}
+          <div style={modal} className="question-modal-animated">
             <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
             {!showAnswer ? (<h1 style={qText}>{currentQuestion.question}</h1>) : (
-              <div style={answerBox}>
-                <h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1>
-              </div>
+              <div style={answerBox}><h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1></div>
             )}
             <div style={resRow}>
               {showAnswer ? (
@@ -225,16 +241,19 @@ export default function GamesPlay() {
       )}
 
       {showActionCard && (
-        <div style={overlay}><div style={actionModal}><h1>{randomAction?.text}</h1></div></div>
+        <div style={overlay}>
+           {/* إضافة أنيميشن بطاقة الأكشن */}
+          <div style={actionModal} className="action-card-animated"><h1>{randomAction?.text}</h1></div>
+        </div>
       )}
     </div>
   );
 }
 
-// التنسيقات (Colors: Off-White & Gray)
+// التنسيقات
 const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "40px 20px" };
 const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "30px", borderRadius: "30px", marginBottom: "60px", border: "1px solid #333" };
-const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" };
+const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", transition: "all 0.3s ease" };
 const teamName1 = { margin: 0, color: "#3498db", fontSize: "24px" };
 const teamName2 = { margin: 0, color: "#e74c3c", fontSize: "24px" };
 const scoreTxt = { fontSize: "48px", fontWeight: "900", color: "#fff" };

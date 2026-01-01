@@ -1,0 +1,65 @@
+/* GamesPlay.css */
+
+/* أنيميشن ظهور المودال (نافذة السؤال) */
+@keyframes slideInFromTop {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.question-modal-animated {
+  animation: slideInFromTop 0.5s ease-out forwards;
+}
+
+/* أنيميشن ظهور بطاقة الأكشن */
+@keyframes popIn {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.action-card-animated {
+  animation: popIn 0.4s ease-out forwards;
+}
+
+/* أنيميشن تجميد الفريق (اهتزاز خفيف) */
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+  100% { transform: translateX(0); }
+}
+
+.frozen-team {
+  animation: shake 0.5s ease-in-out infinite; /* اهتزاز مستمر عند التجميد */
+  border: 2px dashed #9b59b6; /* حدود توضح أنه مجمد */
+  padding: 10px;
+  border-radius: 15px;
+  box-shadow: 0 0 15px rgba(155, 89, 182, 0.5);
+}
+
+/* تعديل بسيط لـ team-side لتصبح كلاس بدلاً من ستايل مباشر */
+.team-side {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  /* الانتقال السلس عند إزالة التجميد */
+  transition: all 0.3s ease-in-out; 
+}

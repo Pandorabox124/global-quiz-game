@@ -5,10 +5,7 @@ import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import './GamesPlay.css'; 
 
-// إعداد المحرك مباشرة من ملف الـ env لضمان السرعة والاستقرار
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(API_KEY);
-// تم تصحيح الموديل إلى 1.5-flash لتجنب خطأ 404
+const genAI = new GoogleGenerativeAI("AIzaSyC6UqwzfzdL1oLQJy7TTcc_G8MP98FE4FI");
 const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" }); 
 
 export default function GamesPlay() {

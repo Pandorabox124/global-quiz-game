@@ -1,18 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { db } from "./firebase";
-import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, increment, getDoc } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-// ربط ملف الأنيميشن
 import './GamesPlay.css'; 
-
-// إعداد الذكاء الاصطناعي بالموديل المستقر
-const genAI = new GoogleGenerativeAI("AIzaSyDHTNSBI9MM9qPvVUDIPLwSqq36vA1YNNg");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
 
 export default function GamesPlay() {
   const { roomId } = useParams();
+  
+  // --- الحالات (States) ---
   const [room, setRoom] = useState(null);
+  const [appConfig, setAppConfig] = useState({ apiKey: "", gameName: "تحميل اسم اللعبة..." });
+  const [model, setModel] = useState(null);
   const [timer, setTimer] = useState(60);
   const [isActive, setIsActive] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -24,14 +23,40 @@ export default function GamesPlay() {
   const [extraTurnActive, setExtraTurnActive] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // مراجع ملفات الصوت
+  // --- المراجع (Audio Refs) ---
   const sndTick = useRef(new Audio("/sounds/button-41.mp3"));
   const sndOpen = useRef(new Audio("/sounds/button-3.mp3"));
   const sndCorrect = useRef(new Audio("/sounds/bell-ringing-05.mp3"));
   const sndWrong = useRef(new Audio("/sounds/button-10.mp3"));
   const sndAction = useRef(new Audio("/sounds/button-19.mp3"));
 
-  // جلب بيانات الغرفة من Firebase
+  // 1. جلب إعدادات المشتري من Firebase (لوحة التحكم)
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const configRef = doc(db, "app_settings", "config");
+        const configSnap = await getDoc(configRef);
+        
+        if (configSnap.exists()) {
+          const data = configSnap.data();
+          setAppConfig(data);
+          if (data.apiKey) {
+            const genAI = new GoogleGenerativeAI(data.apiKey);
+            setModel(genAI.getGenerativeModel({ model: "gemini-1.5-flash" }));
+          }
+        } else {
+          // fallback لملف .env إذا لم تتوفر إعدادات في Firebase
+          const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+          setModel(genAI.getGenerativeModel({ model: "gemini-1.5-flash" }));
+        }
+      } catch (e) {
+        console.error("Error fetching config:", e);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  // 2. متابعة بيانات الغرفة الحية
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "rooms", roomId), (docSnap) => {
       if (docSnap.exists()) {
@@ -44,7 +69,7 @@ export default function GamesPlay() {
     return () => unsub();
   }, [roomId]);
 
-  // منطق العداد (Timer)
+  // 3. منطق التايمر والأصوات
   useEffect(() => {
     let interval = null;
     if (isActive && timer > 0) {
@@ -60,14 +85,15 @@ export default function GamesPlay() {
     return () => clearInterval(interval);
   }, [isActive, timer]);
 
-  // دالة توليد السؤال عبر الذكاء الاصطناعي
+  // --- الدوال (Functions) ---
+
   const generateAIQuestion = async (catName, points) => {
+    if (!model) return { question: "جاري ربط الذكاء الاصطناعي...", answer: "..." };
     setIsGenerating(true);
     const lang = room?.lang || 'ar';
     const diff = points === 200 ? "سهل" : points === 400 ? "متوسط" : "صعب";
     
-    const prompt = `أنت خبير مسابقات. أنتج سؤالاً واحداً في فئة "${catName}". المستوى: ${diff}. 
-    المطلوب رد بصيغة JSON فقط: {"question": "نص السؤال", "answer": "الإجابة"}`;
+    const prompt = `أنت خبير مسابقات. أنتج سؤالاً في فئة "${catName}". المستوى: ${diff}. المطلوب JSON: {"question": "نص السؤال", "answer": "الإجابة"}`;
 
     try {
       const result = await model.generateContent(prompt);
@@ -75,18 +101,14 @@ export default function GamesPlay() {
       const cleanJson = text.replace(/```json|```/g, "").trim();
       return JSON.parse(cleanJson);
     } catch (error) {
-      console.error("AI Error:", error);
-      return { question: "فشل في جلب السؤال", answer: "حاول مرة أخرى" };
-    } finally {
-      setIsGenerating(false);
-    }
+      return { question: "خطأ في الاتصال، حاول مجدداً", answer: "خطأ" };
+    } finally { setIsGenerating(false); }
   };
 
-  // فتح السؤال والتحقق من بطاقات الأكشن
   const openQuestion = async (catName, points, teamKey) => {
-    if (room?.[teamKey]?.isFrozen) return alert("الفريق مجمد حالياً!");
-    
+    if (room?.[teamKey]?.isFrozen) return alert("فريقك مجمد!");
     sndOpen.current.play().catch(() => {});
+
     const roomRef = doc(db, "rooms", roomId);
     let finalTeam = teamKey;
 
@@ -98,7 +120,7 @@ export default function GamesPlay() {
     const qId = `${catName}-${points}-${teamKey}`;
     if (usedQuestions.includes(qId)) return;
 
-    // احتمالية ظهور بطاقة أكشن عشوائية (15%)
+    // احتمالية بطاقة الأكشن
     if (!extraTurnActive && Math.random() < 0.15) {
       const cards = [
         { type: "BONUS", ar: "🎁 مضاعفة النقاط!", en: "🎁 Points Doubled!" },
@@ -107,14 +129,14 @@ export default function GamesPlay() {
         { type: "DELETE", ar: "🗑️ حذف السؤال!", en: "🗑️ Question Deleted!" }
       ];
       const card = cards[Math.floor(Math.random() * cards.length)];
-      setRandomAction({ ...card, text: card[lang === 'ar' ? 'ar' : 'en'] });
+      setRandomAction({ ...card, text: room.lang === 'ar' ? card.ar : card.en });
       setShowActionCard(true);
       sndAction.current.play().catch(() => {});
 
       setTimeout(async () => {
         setShowActionCard(false);
         if (card.type === "DELETE") {
-          setUsedQuestions(prev => [...prev, qId]);
+           setUsedQuestions(prev => [...prev, qId]);
         } else {
           if (card.type === "PENALTY") await updateDoc(roomRef, { [`${finalTeam}.score`]: increment(-200) });
           if (card.type === "BONUS") await updateDoc(roomRef, { [`${finalTeam}.nextBonus`]: true });
@@ -133,7 +155,6 @@ export default function GamesPlay() {
     setIsActive(true); setTimer(60); setShowAnswer(false);
   };
 
-  // معالجة نتيجة الإجابة
   const handleResult = async (isCorrect) => {
     const roomRef = doc(db, "rooms", roomId);
     isCorrect ? sndCorrect.current.play().catch(() => {}) : sndWrong.current.play().catch(() => {});
@@ -141,7 +162,6 @@ export default function GamesPlay() {
     if (isCorrect) {
       await updateDoc(roomRef, { [`${currentQuestion.team}.score`]: increment(currentQuestion.points) });
     }
-
     setUsedQuestions(prev => [...prev, `${currentQuestion.cat}-${currentQuestion.points}-${currentQuestion.team}`]);
     setCurrentQuestion(null); 
     setIsActive(false);
@@ -151,12 +171,15 @@ export default function GamesPlay() {
 
   return (
     <div style={mainContainer}>
-      {/* واجهة التحميل أثناء توليد السؤال */}
+      {/* اسم اللعبة الديناميكي من لوحة التحكم */}
+      <div style={{textAlign: 'center', color: '#f1c40f', marginBottom: '20px'}}>
+         <h1 style={{fontSize: '3rem', textShadow: '2px 2px 10px rgba(0,0,0,0.5)'}}>{appConfig.gameName}</h1>
+      </div>
+
       {isGenerating && (
         <div style={overlay}><div style={modal} className="question-modal-animated"><h2>⚡ جاري استدعاء السؤال...</h2></div></div>
       )}
 
-      {/* الرأس: يعرض الفرق والنتائج والعداد الرئيسي */}
       <div style={headerStyle}>
         <div style={teamSide} className={room?.team1?.isFrozen ? "frozen-team" : ""}>
           <h2 style={teamName1}>{room?.team1?.name}</h2>
@@ -169,7 +192,6 @@ export default function GamesPlay() {
         </div>
       </div>
 
-      {/* لوحة الفئات والأسئلة */}
       <div style={gridStyle}>
         {allCategories.map((cat, idx) => (
           <div key={idx} style={ladderRow}>
@@ -192,33 +214,23 @@ export default function GamesPlay() {
         ))}
       </div>
 
-      {/* نافذة السؤال (تظهر عند اختيار سؤال) */}
       {currentQuestion && (
         <div style={overlay}>
           <div style={modal} className="question-modal-animated">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <div style={modalBadge}>{currentQuestion.cat} | {currentQuestion.points}</div>
-              {/* التوقيت داخل النافذة */}
-              <div style={{ background: timer <= 10 ? "#e74c3c" : "#2c3e50", color: "#fff", padding: "8px 15px", borderRadius: "15px", fontWeight: "bold", fontSize: "1.2rem" }}>⏱️ {timer}</div>
+              <div style={{ background: timer <= 10 ? "#e74c3c" : "#2c3e50", color: "#fff", padding: "8px 15px", borderRadius: "15px", fontWeight: "bold" }}>⏱️ {timer}</div>
             </div>
-
-            {!showAnswer ? (
-              <h1 style={qText}>{currentQuestion.question}</h1>
-            ) : (
-              <div style={answerBox}><h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1></div>
-            )}
-
+            {!showAnswer ? <h1 style={qText}>{currentQuestion.question}</h1> : <div style={answerBox}><h1 style={{ color: "#27ae60" }}>{currentQuestion.answer}</h1></div>}
             <div style={resRow}>
               {showAnswer ? (
-                <><button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button>
-                  <button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button></>
-              ) : (<button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>)}
+                <><button onClick={() => handleResult(true)} style={resBtn}>صح ✅</button><button onClick={() => handleResult(false)} style={{ ...resBtn, background: "#c0392b" }}>خطأ ❌</button></>
+              ) : <button onClick={() => setShowAnswer(true)} style={revealBtn}>كشف الإجابة</button>}
             </div>
           </div>
         </div>
       )}
 
-      {/* بطاقة الأكشن المفاجئة */}
       {showActionCard && (
         <div style={overlay}><div style={actionModal} className="action-card-animated"><h1>{randomAction?.text}</h1></div></div>
       )}
@@ -226,7 +238,7 @@ export default function GamesPlay() {
   );
 }
 
-// التنسيقات (Styles)
+// --- التنسيقات (Styles) ---
 const mainContainer = { direction: "rtl", background: "#1a1a1a", minHeight: "100vh", padding: "40px 20px" };
 const headerStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#262626", padding: "30px", borderRadius: "30px", marginBottom: "60px", border: "1px solid #333" };
 const teamSide = { flex: 1, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" };
